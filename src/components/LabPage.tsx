@@ -1,12 +1,12 @@
 import { useCallback, useState } from "react";
 import type { AttackResult, Lab, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
+import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
+import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
-import { XssPreview } from "./XssPreview";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
-type ResponseTab = "raw" | "render";
 
 interface Props {
   lab: Lab;
@@ -20,6 +20,7 @@ function defaultInputs(lab: Lab): LabInput {
 
 export function LabPage({ lab, isSolved, markSolved }: Props) {
   const id = lab.meta.id;
+  const ui = LAB_UI[id];
   const firstUnsolved = LEVELS.find((lv) => lv < 5 && !isSolved(id, lv)) ?? 5;
 
   const [level, setLevel] = useState<Level>(firstUnsolved);
@@ -27,29 +28,47 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [result, setResult] = useState<AttackResult | null>(null);
   const [runId, setRunId] = useState(0);
   const [fired, setFired] = useState<string | null>(null);
+  const [intercept, setIntercept] = useState(true);
+  const [held, setHeld] = useState(false);
   const [inspector, setInspector] = useState<InspectorTab>("hint");
-  const [responseTab, setResponseTab] = useState<ResponseTab>("raw");
 
   const spec = lab.levels[level];
   const solvedHere = isSolved(id, level);
   // Lv5 cannot be cleared; its write-up unlocks once Lv4 has been beaten.
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
   const succeeded = !!result && (result.solved || fired !== null);
-  const hasRender = result?.renderHtml !== undefined;
+
+  const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
+
+  const clear = () => {
+    setResult(null);
+    setFired(null);
+    setHeld(false);
+  };
 
   const selectLevel = (lv: Level) => {
     setLevel(lv);
-    setResult(null);
-    setFired(null);
+    clear();
   };
 
-  const send = () => {
-    const r = lab.run(level, inputs);
+  const forward = (requestInputs: LabInput = inputs) => {
+    const r = lab.run(level, requestInputs);
     setResult(r);
     setFired(null);
+    setHeld(false);
     setRunId((n) => n + 1);
-    if (r.renderHtml !== undefined) setResponseTab("render");
     if (r.solved) markSolved(id, level);
+  };
+
+  /** The target app was used normally: hold the request if intercepting. */
+  const submitFromApp = (patch?: LabInput) => {
+    const requestInputs = patch ? { ...inputs, ...patch } : inputs;
+    if (patch) setInputs(requestInputs);
+    if (intercept) {
+      setHeld(true);
+    } else {
+      forward(requestInputs);
+    }
   };
 
   const onFire = useCallback(
@@ -60,13 +79,15 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     [id, level, markSolved],
   );
 
-  const status = !result
-    ? { cls: "idle", label: "未送信" }
-    : succeeded
-      ? { cls: "ok", label: "成功" }
-      : level === 5
-        ? { cls: "blocked", label: "防御済み" }
-        : { cls: "ng", label: "失敗" };
+  const status = held
+    ? { cls: "held", label: "傍受中" }
+    : !result
+      ? { cls: "idle", label: "待機" }
+      : succeeded
+        ? { cls: "ok", label: "成功" }
+        : level === 5
+          ? { cls: "blocked", label: "防御済み" }
+          : { cls: "ng", label: "失敗" };
 
   const inspectorTabs: { key: InspectorTab; label: string; locked?: boolean }[] = [
     { key: "hint", label: "ヒント" },
@@ -76,13 +97,15 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   ];
 
   return (
-    <div className="page lab">
+    <div className="page lab wide">
       <div className="lab-toolbar">
         <div className="lab-title">
           <LabIcon id={id} width={20} height={20} className="lab-title-icon" />
           <div>
             <h1>{lab.meta.title}</h1>
-            <div className="lab-sub">{lab.meta.category}</div>
+            <div className="lab-sub">
+              {lab.meta.category} ・ 目標: {lab.meta.objective}
+            </div>
           </div>
         </div>
         <div className="segmented" role="tablist" aria-label="セキュリティレベル">
@@ -102,99 +125,95 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
         </div>
       </div>
 
-      <dl className="brief">
-        <dt>目標</dt>
-        <dd>{lab.meta.objective}</dd>
-        <dt>防御 Lv{level}</dt>
-        <dd>{spec.defense}</dd>
-      </dl>
+      <div className="defense-bar">
+        <span className="defense-tag mono">防御 Lv{level}</span>
+        <span>{spec.defense}</span>
+      </div>
 
-      <div className="lab-grid">
-        <div className="lab-col">
-          <section className="pane">
-            <div className="pane-head">
-              <span className="pane-title">リクエスト</span>
-              <span className="pane-meta">{lab.fields.some((f) => f.multiline) ? "Ctrl+Enter で送信" : "Enter で送信"}</span>
-            </div>
-            <form
-              className="request"
-              onSubmit={(e) => {
-                e.preventDefault();
-                send();
-              }}
-            >
+      <div className="workbench">
+        <section className="wb-target">
+          <BrowserChrome url={ui.url} title={ui.site} onReload={clear}>
+            {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire })}
+          </BrowserChrome>
+        </section>
+
+        <section className="pane wb-proxy">
+          <div className="pane-head">
+            <span className="pane-title">Proxy</span>
+            <label className="toggle" title="ON のとき、標的アプリからの送信をここで止めて改ざんできます">
+              <input type="checkbox" checked={intercept} onChange={(e) => setIntercept(e.target.checked)} />
+              <span className="toggle-track" />
+              Intercept {intercept ? "ON" : "OFF"}
+            </label>
+          </div>
+
+          <div className={`proxy-req ${held ? "is-held" : ""}`}>
+            {held && <div className="held-bar">リクエストを傍受しました。値を改ざんして Forward してください。</div>}
+            <pre className="raw mono">{ui.request(inputs).join("\n")}</pre>
+            <div className="params">
+              <div className="params-head">
+                <span>パラメータ</span>
+                <span className="dim">ここで直接改ざんできます</span>
+              </div>
               {lab.fields.map((f) => (
-                <label key={f.name} className="param">
-                  <span className="param-name mono">{f.name}</span>
-                  <span className="param-label">{f.label}</span>
+                <label key={f.name} className="param-row">
+                  <span className="param-key mono">{f.name}</span>
                   {f.multiline ? (
                     <textarea
-                      className={f.mono ? "mono" : ""}
-                      rows={5}
-                      placeholder={f.placeholder}
+                      className="mono"
+                      rows={f.name === "html" ? 6 : 3}
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
-                      onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
+                      onChange={(e) => setField(f.name, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                           e.preventDefault();
-                          send();
+                          forward();
                         }
                       }}
                     />
                   ) : (
                     <input
-                      className={f.mono ? "mono" : ""}
-                      placeholder={f.placeholder}
+                      className="mono"
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
                       autoComplete="off"
-                      onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
+                      onChange={(e) => setField(f.name, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          forward();
+                        }
+                      }}
                     />
                   )}
                 </label>
               ))}
-              <div className="request-actions">
-                <button type="submit" className="btn btn-accent">
-                  <Play width={13} height={13} /> 送信
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    setInputs(defaultInputs(lab));
-                    setResult(null);
-                    setFired(null);
-                  }}
-                >
-                  <Reset width={13} height={13} /> 初期化
-                </button>
-              </div>
-            </form>
-          </section>
+            </div>
+            <div className="proxy-actions">
+              <button type="button" className="btn btn-accent" onClick={() => forward()}>
+                <Play width={13} height={13} /> Forward
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setInputs(defaultInputs(lab));
+                  clear();
+                }}
+              >
+                <Reset width={13} height={13} /> 初期化
+              </button>
+            </div>
+          </div>
 
-          <section className="pane">
-            <div className="pane-head">
-              <div className="pane-tabs">
-                <button
-                  className={`pane-tab ${responseTab === "raw" ? "active" : ""}`}
-                  onClick={() => setResponseTab("raw")}
-                >
-                  レスポンス
-                </button>
-                {hasRender && (
-                  <button
-                    className={`pane-tab ${responseTab === "render" ? "active" : ""}`}
-                    onClick={() => setResponseTab("render")}
-                  >
-                    レンダリング
-                  </button>
-                )}
-              </div>
+          <div className="proxy-res">
+            <div className="res-head">
+              <span className="pane-title">Response</span>
               <span className={`status-badge ${status.cls}`}>{status.label}</span>
             </div>
             {!result ? (
-              <div className="empty">リクエストを送信すると、ここにサーバーの応答が表示されます。</div>
+              <div className="empty">Forward するとサーバーの応答がここに表示されます。</div>
             ) : (
               <>
                 {(result.note || fired !== null) && (
@@ -204,19 +223,13 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                     {succeeded && <div className="notice-strong">Lv{level} クリア — 「解答」タブが解放されました</div>}
                   </div>
                 )}
-                {responseTab === "raw" || result.renderHtml === undefined ? (
-                  <pre className="console">{result.output.join("\n")}</pre>
-                ) : (
-                  <div className="render">
-                    <XssPreview html={result.renderHtml} runId={runId} onFire={onFire} />
-                  </div>
-                )}
+                <pre className="console">{result.output.join("\n")}</pre>
               </>
             )}
-          </section>
-        </div>
+          </div>
+        </section>
 
-        <section className="pane inspector">
+        <section className="pane wb-inspector">
           <div className="pane-head">
             <div className="pane-tabs" role="tablist">
               {inspectorTabs.map((t) => (
