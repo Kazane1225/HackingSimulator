@@ -1,0 +1,75 @@
+export type Level = 1 | 2 | 3 | 4 | 5;
+
+export const LEVELS: Level[] = [1, 2, 3, 4, 5];
+
+/** A single input control rendered in a lab's attack form. */
+export interface LabField {
+  /** Key used in the {@link LabInput} map. */
+  name: string;
+  /** Human label shown above the control. */
+  label: string;
+  placeholder?: string;
+  /** Render a <textarea> instead of an <input>. */
+  multiline?: boolean;
+  /** Pre-filled value when the lab (or level) is first opened. */
+  default?: string;
+  /** Monospace font for payload-ish fields. */
+  mono?: boolean;
+}
+
+/** Values entered by the learner, keyed by {@link LabField.name}. */
+export type LabInput = Record<string, string>;
+
+/** Result of running an attack attempt against a simulated backend. */
+export interface AttackResult {
+  /** Whether the attacker achieved the lab objective at this security level. */
+  solved: boolean;
+  /** Lines of output to render in the "response" / terminal pane. */
+  output: string[];
+  /** Short note explaining what the defense did (shown as a system message). */
+  note?: string;
+  /**
+   * For labs that render attacker-controlled markup (XSS), the sanitized HTML
+   * to mount inside a sandboxed iframe. When present, the UI uses the iframe's
+   * real execution as the source of truth for {@link AttackResult.solved}.
+   */
+  renderHtml?: string;
+}
+
+/** Educational description of one security level of a lab. */
+export interface LevelSpec {
+  /** What the defense does, in one line. */
+  defense: string;
+  /** A nudge that does not give the answer away (always visible). */
+  hint: string;
+  /** A working payload / approach (revealed only after the level is solved). */
+  solution: string;
+  /** Pseudo server-side code of the defense, shown for code-review practice. */
+  code: string;
+}
+
+export interface LabMeta {
+  id: string;
+  title: string;
+  shortTitle: string;
+  category: string;
+  /** What the attacker must achieve, shown as the mission brief. */
+  objective: string;
+  /** One-line summary shown on the home grid. */
+  summary: string;
+  /** Emoji/icon shown on the home grid. */
+  icon: string;
+}
+
+/** A complete lab: metadata, input shape, per-level logic and teaching text. */
+export interface Lab {
+  meta: LabMeta;
+  /** Input controls for the attack form. */
+  fields: LabField[];
+  /** Deep-dive on the vulnerability class and correct defenses (解説). */
+  explanation: string;
+  /** Per-level defense text, hints, solutions and pseudo-code. */
+  levels: Record<Level, LevelSpec>;
+  /** Simulate the vulnerable backend at `level` for the given `input`. */
+  run(level: Level, input: LabInput): AttackResult;
+}

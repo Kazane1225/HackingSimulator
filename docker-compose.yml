@@ -1,0 +1,7 @@
+services:
+  hackme:
+    build: .
+    image: hackme-simulator
+    ports:
+      - "${HACKME_PORT:-8080}:80"
+    restart: unless-stopped
