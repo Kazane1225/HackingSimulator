@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Level } from "./labs/types";
 
-const STORAGE_KEY = "hackme.progress.v1";
+const STORAGE_KEY = "hacklab.progress.v1";
 
 /** Map of lab id -> list of solved levels. */
 export type Progress = Record<string, Level[]>;

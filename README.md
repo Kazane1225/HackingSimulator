@@ -1,4 +1,4 @@
-# HackMe — セキュリティ学習用ハッキングシミュレータ
+# HackLab — セキュリティ学習用ハッキングシミュレータ
 
 Web の代表的な脆弱性を「攻撃者の視点」で体験し、仕組みと正しい対策を学ぶための教材です。
 
@@ -43,11 +43,11 @@ Web の代表的な脆弱性を「攻撃者の視点」で体験し、仕組み�
 docker compose up -d --build
 ```
 
-http://localhost:8080 を開きます。ポートを変える場合は `HACKME_PORT` を指定します。
+http://localhost:8080 を開きます。ポートを変える場合は `HACKLAB_PORT` を指定します。
 
 ```bash
-HACKME_PORT=8088 docker compose up -d --build        # macOS / Linux
-$env:HACKME_PORT=8088; docker compose up -d --build  # Windows PowerShell
+HACKLAB_PORT=8088 docker compose up -d --build        # macOS / Linux
+$env:HACKLAB_PORT=8088; docker compose up -d --build  # Windows PowerShell
 ```
 
 停止は `docker compose down` です。

@@ -1,5 +1,5 @@
 {
-  "name": "hackme-simulator",
+  "name": "hacklab-simulator",
   "version": "1.0.0",
   "description": "A browser-based, safe-by-design hacking simulator for security training. Vulnerable backends are simulated client-side with 5 escalating security levels per lab.",
   "private": true,

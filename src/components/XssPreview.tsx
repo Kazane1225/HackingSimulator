@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-const MESSAGE_TYPE = "hackme-xss-fired";
+const MESSAGE_TYPE = "hacklab-xss-fired";
 
 // Installed before the attacker's markup. The iframe is sandboxed with only
 // allow-scripts (opaque origin), so payloads cannot touch the parent page;

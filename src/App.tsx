@@ -30,7 +30,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <a href="#/" className="brand">
-          <span className="brand-mark">&gt;_</span> HackMe
+          <span className="brand-mark">&gt;_</span> HackLab
           <span className="brand-sub">セキュリティ学習シミュレータ</span>
         </a>
         <nav>
