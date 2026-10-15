@@ -183,9 +183,7 @@ export const cmdiLab: Lab = {
     shortTitle: "コマンドインジェクション",
     category: "インジェクション",
     objective: "ping ツールを悪用して flag.txt の内容を読み出す。",
-    summary: "シェルに渡されるホスト名にコマンドを注入し、任意コマンドを実行する。",
-    icon: "🖥️",
-  },
+    summary: "シェルに渡されるホスト名にコマンドを注入し、任意コマンドを実行する。",  },
   fields: [
     {
       name: "host",

@@ -170,9 +170,7 @@ export const pathTraversalLab: Lab = {
     shortTitle: "パストラバーサル",
     category: "不適切なアクセス制御",
     objective: "公開フォルダを脱出し、/etc/passwd を読み出す。",
-    summary: "ファイル名パラメータに ../ などを注入し、ベースディレクトリの外を読む。",
-    icon: "📂",
-  },
+    summary: "ファイル名パラメータに ../ などを注入し、ベースディレクトリの外を読む。",  },
   fields: [
     {
       name: "name",

@@ -40,7 +40,7 @@ export function XssPreview({ html, runId, onFire }: Props) {
   }, [onFire]);
 
   const doc = `<!doctype html><html><head><meta charset="utf-8">${STYLE}${HOOK}</head>
-<body><h3>📖 ゲストブック</h3>${html}</body></html>`;
+<body><h3>ゲストブック</h3>${html}</body></html>`;
 
   return (
     <iframe

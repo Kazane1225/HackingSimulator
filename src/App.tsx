@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Home } from "./components/Home";
 import { LabPage } from "./components/LabPage";
-import { findLab } from "./labs";
+import { Sidebar } from "./components/Sidebar";
+import { Logo } from "./components/icons";
+import { LABS, findLab } from "./labs";
 import { useProgress } from "./progress";
 
 /** Hash-based routing so deep links work on GitHub Pages without a 404 shim. */
@@ -22,33 +24,59 @@ export function App() {
   const labMatch = route.match(/^\/lab\/([\w-]+)/);
   const lab = labMatch ? findLab(labMatch[1]) : undefined;
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [route]);
+  const total = LABS.length * 4;
+  const cleared = LABS.reduce(
+    (sum, l) => sum + (progress[l.meta.id] ?? []).filter((lv) => lv <= 4).length,
+    0,
+  );
 
   return (
-    <div className="app">
-      <header className="topbar">
+    <div className="shell">
+      <header className="titlebar">
         <a href="#/" className="brand">
-          <span className="brand-mark">&gt;_</span> HackLab
-          <span className="brand-sub">セキュリティ学習シミュレータ</span>
+          <Logo width={18} height={18} className="brand-logo" />
+          <span className="brand-name">HackLab</span>
         </a>
-        <nav>
-          <a href="#/">ラボ一覧</a>
-        </nav>
+        <span className="titlebar-sep" />
+        <span className="titlebar-path">
+          {lab ? (
+            <>
+              <a href="#/">ラボ</a>
+              <span className="crumb-sep">/</span>
+              <span>{lab.meta.shortTitle}</span>
+            </>
+          ) : (
+            <span>ダッシュボード</span>
+          )}
+        </span>
+        <span className="titlebar-spacer" />
+        <span className="titlebar-progress" title="Lv1〜4 のクリア数">
+          <span className="meter">
+            <span className="meter-fill" style={{ width: `${(cleared / total) * 100}%` }} />
+          </span>
+          <span className="mono">
+            {cleared}/{total}
+          </span>
+        </span>
       </header>
 
-      <main className="content">
-        {lab ? (
-          <LabPage key={lab.meta.id} lab={lab} isSolved={isSolved} markSolved={markSolved} />
-        ) : (
-          <Home progress={progress} onReset={reset} />
-        )}
-      </main>
+      <div className="workspace">
+        <Sidebar activeId={lab?.meta.id} progress={progress} />
+        <main className="main">
+          {lab ? (
+            <LabPage key={lab.meta.id} lab={lab} isSolved={isSolved} markSolved={markSolved} />
+          ) : (
+            <Home progress={progress} onReset={reset} />
+          )}
+        </main>
+      </div>
 
-      <footer className="footer">
-        すべての「脆弱なサーバー」はブラウザ内でシミュレートされています。実在のシステムへの攻撃は違法です。
-        学んだ技術は、許可された環境でのみ使用してください。
+      <footer className="statusbar">
+        <span className="status-item">
+          <span className="status-dot" /> シミュレーションモード — 外部への通信なし
+        </span>
+        <span className="titlebar-spacer" />
+        <span className="status-item">許可された環境以外での攻撃は違法です</span>
       </footer>
     </div>
   );

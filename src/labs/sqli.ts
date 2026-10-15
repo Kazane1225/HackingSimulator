@@ -335,9 +335,7 @@ export const sqliLab: Lab = {
     shortTitle: "SQL インジェクション",
     category: "インジェクション",
     objective: "正しいパスワードを知らずに admin としてログインする。",
-    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証を回避する。",
-    icon: "🗄️",
-  },
+    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証を回避する。",  },
   fields: [
     { name: "username", label: "ユーザー名", placeholder: "admin", mono: true, default: "admin" },
     { name: "password", label: "パスワード", placeholder: "password", mono: true, default: "wrong" },

@@ -144,9 +144,7 @@ export const xssLab: Lab = {
     shortTitle: "XSS",
     category: "インジェクション",
     objective: "コメント欄を悪用し、ページ上で alert() を実行させる。",
-    summary: "反射されたコメントにスクリプトを注入し、サンドボックス内で任意 JS を実行する。",
-    icon: "💬",
-  },
+    summary: "反射されたコメントにスクリプトを注入し、サンドボックス内で任意 JS を実行する。",  },
   fields: [
     {
       name: "comment",

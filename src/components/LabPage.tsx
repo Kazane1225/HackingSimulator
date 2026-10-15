@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import type { AttackResult, Lab, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
+import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { RichText } from "./RichText";
 import { XssPreview } from "./XssPreview";
 
-type Tab = "hint" | "code" | "solution" | "explain";
+type InspectorTab = "hint" | "source" | "solution" | "explain";
+type ResponseTab = "raw" | "render";
 
 interface Props {
   lab: Lab;
@@ -25,13 +27,15 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [result, setResult] = useState<AttackResult | null>(null);
   const [runId, setRunId] = useState(0);
   const [fired, setFired] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("hint");
+  const [inspector, setInspector] = useState<InspectorTab>("hint");
+  const [responseTab, setResponseTab] = useState<ResponseTab>("raw");
 
   const spec = lab.levels[level];
   const solvedHere = isSolved(id, level);
   // Lv5 cannot be cleared; its write-up unlocks once Lv4 has been beaten.
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
   const succeeded = !!result && (result.solved || fired !== null);
+  const hasRender = result?.renderHtml !== undefined;
 
   const selectLevel = (lv: Level) => {
     setLevel(lv);
@@ -39,11 +43,12 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     setFired(null);
   };
 
-  const attack = () => {
+  const send = () => {
     const r = lab.run(level, inputs);
     setResult(r);
     setFired(null);
     setRunId((n) => n + 1);
+    if (r.renderHtml !== undefined) setResponseTab("render");
     if (r.solved) markSolved(id, level);
   };
 
@@ -55,174 +60,203 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     [id, level, markSolved],
   );
 
-  const tabs = useMemo(
-    () =>
-      [
-        { key: "hint", label: "ヒント" },
-        { key: "code", label: "サーバー側コード" },
-        { key: "solution", label: solutionUnlocked ? "解答" : "🔒 解答" },
-        { key: "explain", label: "解説" },
-      ] as { key: Tab; label: string }[],
-    [solutionUnlocked],
-  );
+  const status = !result
+    ? { cls: "idle", label: "未送信" }
+    : succeeded
+      ? { cls: "ok", label: "成功" }
+      : level === 5
+        ? { cls: "blocked", label: "防御済み" }
+        : { cls: "ng", label: "失敗" };
+
+  const inspectorTabs: { key: InspectorTab; label: string; locked?: boolean }[] = [
+    { key: "hint", label: "ヒント" },
+    { key: "source", label: "ソース" },
+    { key: "solution", label: "解答", locked: !solutionUnlocked },
+    { key: "explain", label: "解説" },
+  ];
 
   return (
-    <div className="lab">
-      <a href="#/" className="back">
-        ← ラボ一覧
-      </a>
-      <header className="lab-header">
-        <span className="lab-icon big">{lab.meta.icon}</span>
-        <div>
-          <div className="lab-category">{lab.meta.category}</div>
-          <h1>{lab.meta.title}</h1>
-          <p className="objective">
-            <strong>🎯 目標:</strong> {lab.meta.objective}
-          </p>
-        </div>
-      </header>
-
-      <div className="level-tabs" role="tablist" aria-label="セキュリティレベル">
-        {LEVELS.map((lv) => (
-          <button
-            key={lv}
-            role="tab"
-            aria-selected={lv === level}
-            className={`level-tab ${lv === level ? "active" : ""} ${isSolved(id, lv) ? "done" : ""}`}
-            onClick={() => selectLevel(lv)}
-          >
-            Lv{lv}
-            {lv === 5 && <span className="tag">Impossible</span>}
-            {isSolved(id, lv) && <span className="check">✓</span>}
-          </button>
-        ))}
-      </div>
-
-      <div className="defense">
-        <span className="defense-label">このレベルの防御</span>
-        {spec.defense}
-      </div>
-
-      <div className="lab-body">
-        <section className="panel attack">
-          <h2>攻撃</h2>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              attack();
-            }}
-          >
-            {lab.fields.map((f) => (
-              <label key={f.name} className="field">
-                <span>{f.label}</span>
-                {f.multiline ? (
-                  <textarea
-                    className={f.mono ? "mono" : ""}
-                    rows={4}
-                    placeholder={f.placeholder}
-                    value={inputs[f.name] ?? ""}
-                    spellCheck={false}
-                    onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        attack();
-                      }
-                    }}
-                  />
-                ) : (
-                  <input
-                    className={f.mono ? "mono" : ""}
-                    placeholder={f.placeholder}
-                    value={inputs[f.name] ?? ""}
-                    spellCheck={false}
-                    autoComplete="off"
-                    onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
-                  />
-                )}
-              </label>
-            ))}
-            <div className="actions">
-              <button type="submit" className="btn-primary">
-                攻撃を実行 ▶
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => {
-                  setInputs(defaultInputs(lab));
-                  setResult(null);
-                  setFired(null);
-                }}
-              >
-                入力をリセット
-              </button>
-              {lab.fields.some((f) => f.multiline) && (
-                <span className="kbd-hint">Ctrl + Enter でも実行</span>
-              )}
-            </div>
-          </form>
-
-          {result && (
-            <div className={`result ${succeeded ? "ok" : "ng"}`}>
-              <div className="result-banner">
-                {succeeded
-                  ? `🎉 攻撃成功！ Lv${level} クリア`
-                  : level === 5
-                    ? "🛡 防御に阻まれました（Lv5 は正しい実装です）"
-                    : "❌ 攻撃は失敗しました"}
-              </div>
-              {fired !== null && (
-                <div className="fired">alert() が実行されました: {JSON.stringify(fired)}</div>
-              )}
-              {result.note && <div className="note">{result.note}</div>}
-              <pre className="terminal">{result.output.join("\n")}</pre>
-              {result.renderHtml !== undefined && (
-                <div className="preview">
-                  <div className="preview-label">ブラウザでの表示（サンドボックス iframe）</div>
-                  <XssPreview html={result.renderHtml} runId={runId} onFire={onFire} />
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <section className="panel learn">
-          <div className="learn-tabs" role="tablist">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={tab === t.key}
-                className={`learn-tab ${tab === t.key ? "active" : ""}`}
-                onClick={() => setTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
+    <div className="page lab">
+      <div className="lab-toolbar">
+        <div className="lab-title">
+          <LabIcon id={id} width={20} height={20} className="lab-title-icon" />
+          <div>
+            <h1>{lab.meta.title}</h1>
+            <div className="lab-sub">{lab.meta.category}</div>
           </div>
-          <div className="learn-body">
-            {tab === "hint" && <RichText text={spec.hint} />}
-            {tab === "code" && (
+        </div>
+        <div className="segmented" role="tablist" aria-label="セキュリティレベル">
+          {LEVELS.map((lv) => (
+            <button
+              key={lv}
+              role="tab"
+              aria-selected={lv === level}
+              className={`seg ${lv === level ? "active" : ""}`}
+              onClick={() => selectLevel(lv)}
+              title={lv === 5 ? "正しい実装（突破不可）" : `Lv${lv}`}
+            >
+              {lv === 5 ? <Shield width={13} height={13} /> : isSolved(id, lv) ? <Check width={13} height={13} /> : null}
+              Lv{lv}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <dl className="brief">
+        <dt>目標</dt>
+        <dd>{lab.meta.objective}</dd>
+        <dt>防御 Lv{level}</dt>
+        <dd>{spec.defense}</dd>
+      </dl>
+
+      <div className="lab-grid">
+        <div className="lab-col">
+          <section className="pane">
+            <div className="pane-head">
+              <span className="pane-title">リクエスト</span>
+              <span className="pane-meta">{lab.fields.some((f) => f.multiline) ? "Ctrl+Enter で送信" : "Enter で送信"}</span>
+            </div>
+            <form
+              className="request"
+              onSubmit={(e) => {
+                e.preventDefault();
+                send();
+              }}
+            >
+              {lab.fields.map((f) => (
+                <label key={f.name} className="param">
+                  <span className="param-name mono">{f.name}</span>
+                  <span className="param-label">{f.label}</span>
+                  {f.multiline ? (
+                    <textarea
+                      className={f.mono ? "mono" : ""}
+                      rows={5}
+                      placeholder={f.placeholder}
+                      value={inputs[f.name] ?? ""}
+                      spellCheck={false}
+                      onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          send();
+                        }
+                      }}
+                    />
+                  ) : (
+                    <input
+                      className={f.mono ? "mono" : ""}
+                      placeholder={f.placeholder}
+                      value={inputs[f.name] ?? ""}
+                      spellCheck={false}
+                      autoComplete="off"
+                      onChange={(e) => setInputs({ ...inputs, [f.name]: e.target.value })}
+                    />
+                  )}
+                </label>
+              ))}
+              <div className="request-actions">
+                <button type="submit" className="btn btn-accent">
+                  <Play width={13} height={13} /> 送信
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setInputs(defaultInputs(lab));
+                    setResult(null);
+                    setFired(null);
+                  }}
+                >
+                  <Reset width={13} height={13} /> 初期化
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="pane">
+            <div className="pane-head">
+              <div className="pane-tabs">
+                <button
+                  className={`pane-tab ${responseTab === "raw" ? "active" : ""}`}
+                  onClick={() => setResponseTab("raw")}
+                >
+                  レスポンス
+                </button>
+                {hasRender && (
+                  <button
+                    className={`pane-tab ${responseTab === "render" ? "active" : ""}`}
+                    onClick={() => setResponseTab("render")}
+                  >
+                    レンダリング
+                  </button>
+                )}
+              </div>
+              <span className={`status-badge ${status.cls}`}>{status.label}</span>
+            </div>
+            {!result ? (
+              <div className="empty">リクエストを送信すると、ここにサーバーの応答が表示されます。</div>
+            ) : (
               <>
-                <p className="muted">Lv{level} のサーバー側処理（疑似コード）。防御の穴を探してみましょう。</p>
+                {(result.note || fired !== null) && (
+                  <div className={`notice ${status.cls}`}>
+                    {fired !== null && <div>alert() が実行されました: {JSON.stringify(fired)}</div>}
+                    {result.note && <div>{result.note}</div>}
+                    {succeeded && <div className="notice-strong">Lv{level} クリア — 「解答」タブが解放されました</div>}
+                  </div>
+                )}
+                {responseTab === "raw" || result.renderHtml === undefined ? (
+                  <pre className="console">{result.output.join("\n")}</pre>
+                ) : (
+                  <div className="render">
+                    <XssPreview html={result.renderHtml} runId={runId} onFire={onFire} />
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+
+        <section className="pane inspector">
+          <div className="pane-head">
+            <div className="pane-tabs" role="tablist">
+              {inspectorTabs.map((t) => (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={inspector === t.key}
+                  className={`pane-tab ${inspector === t.key ? "active" : ""}`}
+                  onClick={() => setInspector(t.key)}
+                >
+                  {t.key === "solution" &&
+                    (t.locked ? <Lock width={12} height={12} /> : <LockOpen width={12} height={12} />)}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="inspector-body">
+            {inspector === "hint" && <RichText text={spec.hint} />}
+            {inspector === "source" && (
+              <>
+                <div className="file-label mono">server.js — Lv{level}（疑似コード）</div>
                 <pre className="code">{spec.code}</pre>
               </>
             )}
-            {tab === "solution" &&
+            {inspector === "solution" &&
               (solutionUnlocked ? (
                 <RichText text={spec.solution} />
               ) : (
                 <div className="locked">
-                  <p>🔒 解答はこのレベルをクリアすると表示されます。</p>
-                  <p className="muted">
+                  <Lock width={22} height={22} />
+                  <p>このレベルをクリアすると表示されます。</p>
+                  <p className="dim">
                     {level === 5
                       ? "Lv5 の解説は Lv4 をクリアすると読めるようになります。"
-                      : "まずはヒントとサーバー側コードを手がかりに挑戦してみましょう。"}
+                      : "ヒントとソースを手がかりに挑戦してみましょう。"}
                   </p>
                 </div>
               ))}
-            {tab === "explain" && <RichText text={lab.explanation} />}
+            {inspector === "explain" && <RichText text={lab.explanation} />}
           </div>
         </section>
       </div>

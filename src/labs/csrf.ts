@@ -137,7 +137,7 @@ function run(level: Level, input: LabInput): AttackResult {
   output.push("");
 
   const result = bank(level, req);
-  output.push(result.ok ? `✅ ${result.reason}` : `❌ ${result.reason}`);
+  output.push(result.ok ? `[200 OK] ${result.reason}` : `[403 BLOCKED] ${result.reason}`);
 
   return {
     solved: result.ok,
@@ -203,9 +203,7 @@ export const csrfLab: Lab = {
     shortTitle: "CSRF",
     category: "セッション / リクエスト偽造",
     objective: "ログイン中の被害者に、攻撃者宛ての送金を気づかせず実行させる。",
-    summary: "悪性ページから被害者のセッションで銀行の送金リクエストを強制する。",
-    icon: "🏦",
-  },
+    summary: "悪性ページから被害者のセッションで銀行の送金リクエストを強制する。",  },
   fields: [
     {
       name: "html",

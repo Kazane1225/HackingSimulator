@@ -55,10 +55,8 @@ export interface LabMeta {
   category: string;
   /** What the attacker must achieve, shown as the mission brief. */
   objective: string;
-  /** One-line summary shown on the home grid. */
+  /** One-line summary shown on the dashboard. */
   summary: string;
-  /** Emoji/icon shown on the home grid. */
-  icon: string;
 }
 
 /** A complete lab: metadata, input shape, per-level logic and teaching text. */
