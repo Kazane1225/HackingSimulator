@@ -67,7 +67,7 @@ npm run build      # dist/ に本番ビルド
 
 ## GitHub Pages へのデプロイ
 
-`.github/workflows/deploy.yml` が `main` への push ごとにテスト → ビルド → デプロイを行います。
+`.github/workflows/deploy.yml` が `main` への push ごとにテスト（ラボのテスト・型チェック・ビルド・E2E）→ ビルド → デプロイを行います。テストが 1 つでも失敗すると公開されません。
 
 1. このリポジトリを GitHub に push する
 2. リポジトリの **Settings → Pages → Build and deployment → Source** を **GitHub Actions** にする
@@ -94,7 +94,7 @@ npm run test:e2e                  # ビルド → preview 起動 → 実行
 npm run typecheck:e2e             # e2e の型チェック
 ```
 
-確認内容: XSS が sandbox 内で実際に発火したときだけクリアになること／進捗の保存と壊れたデータからの復旧／Intercept → 改ざん → Forward の流れ／ヒントの段階表示と解答のロック／スマホ幅でのペイン切替と横はみ出しがないこと。CI では PR ごとに実行されます。
+確認内容: XSS が sandbox 内で実際に発火したときだけクリアになること／進捗の保存と壊れたデータからの復旧／Intercept → 改ざん → Forward の流れ／ヒントの段階表示と解答のロック／スマホ幅でのペイン切替と横はみ出しがないこと。CI では PR ごとと、`main` へのデプロイ前に実行されます。
 
 ```
 e2e/
@@ -126,7 +126,7 @@ e2e/
 ├── Dockerfile             # Node でビルド → nginx で配信
 ├── docker-compose.yml
 ├── nginx.conf
-└── .github/workflows/     # ci.yml（PR）, deploy.yml（main）
+└── .github/workflows/     # checks.yml（共通のテスト）を ci.yml（PR）と deploy.yml（main）から呼び出す
 ```
 
 ### XSS ラボの安全性について
