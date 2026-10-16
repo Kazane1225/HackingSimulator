@@ -305,10 +305,8 @@ const idor: LabUI = {
       <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         <label>API エンドポイント<input className="mono" value={inputs.endpoint ?? ""} onChange={(e) => setField("endpoint", e.target.value)} /></label>
         <label>注文 ID<input className="mono" value={inputs.orderId ?? ""} onChange={(e) => setField("orderId", e.target.value)} /></label>
-        <div className="app-form row">
-          <input className="mono" aria-label="owner" value={inputs.owner ?? ""} onChange={(e) => setField("owner", e.target.value)} />
-          <input className="mono" aria-label="role" value={inputs.role ?? ""} onChange={(e) => setField("role", e.target.value)} />
-        </div>
+        <label>owner<input className="mono" aria-label="owner" value={inputs.owner ?? ""} onChange={(e) => setField("owner", e.target.value)} /></label>
+        <label>role<input className="mono" aria-label="role" value={inputs.role ?? ""} onChange={(e) => setField("role", e.target.value)} /></label>
         <button type="submit" className="app-btn">注文を表示</button>
       </form>
       {result && <div className={`app-doc ${succeeded ? "leaked" : ""}`}><pre>{result.output.join("\n")}</pre></div>}

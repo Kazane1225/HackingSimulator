@@ -1,10 +1,11 @@
 import { expect, test } from "../fixtures/test";
 import { STATUS } from "../data/labels";
+import { NEW_LABS } from "../data/newLabs";
 
 const encode = (value: object) =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 
-test.describe("new vulnerability labs", () => {
+test.describe("new vulnerability labs — target app", () => {
   test("IDOR Lv1 exposes another user's order", async ({ page, lab }) => {
     await lab.goto("idor");
     await lab.setIntercept(false);
@@ -52,5 +53,38 @@ test.describe("new vulnerability labs", () => {
     await page.getByRole("button", { name: "アップロード" }).click();
     await expect(lab.statusBadge).toHaveText(STATUS.success);
     await expect(page.getByText("危険なファイルが実行されました。")).toBeVisible();
+  });
+});
+
+test.describe("new vulnerability labs — proxy exploits", () => {
+  for (const { id, exploits } of NEW_LABS) {
+    for (const level of [1, 2, 3, 4] as const) {
+      test(`${id} Lv${level} reference exploit clears the level`, async ({ lab }) => {
+        await lab.goto(id);
+        await lab.selectLevel(level);
+        await lab.sendAll(exploits[level]);
+        await expect(lab.statusBadge).toHaveText(STATUS.success);
+      });
+    }
+
+    test(`${id} Lv5 blocks the Lv4 exploit`, async ({ lab }) => {
+      await lab.goto(id);
+      await lab.selectLevel(5);
+      await lab.sendAll(exploits[4]);
+      await expect(lab.statusBadge).toHaveText(STATUS.blocked);
+    });
+  }
+});
+
+test.describe("new vulnerability labs — intercept", () => {
+  test("IDOR: tampering with a held order id exposes Bob's order", async ({ page, lab }) => {
+    await lab.goto("idor");
+    await page.getByRole("button", { name: "注文を表示" }).click();
+    await expect(lab.statusBadge).toHaveText(STATUS.held);
+
+    await lab.send("orderId", "1002");
+
+    await expect(lab.statusBadge).toHaveText(STATUS.success);
+    await expect(lab.pane("target").getByText(/Bob .* ORD-B0B-42/)).toBeVisible();
   });
 });
