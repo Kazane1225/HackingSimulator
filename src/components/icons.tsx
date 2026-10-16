@@ -75,12 +75,64 @@ function Bank(props: IconProps) {
   );
 }
 
+function Access(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="11" r="2" />
+      <path d="M6 16c.8-1.7 1.8-2.5 3-2.5s2.2.8 3 2.5M14 9h4M14 12h4" />
+    </svg>
+  );
+}
+
+function Key(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="8" cy="12" r="4" />
+      <path d="M12 12h9M17 12v3M20 12v2" />
+    </svg>
+  );
+}
+
+function Token(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M8 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M16 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+      <path d="m10 8-2 4 2 4M14 8l2 4-2 4" />
+    </svg>
+  );
+}
+
+function Server(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="4" y="4" width="16" height="6" rx="1" />
+      <rect x="4" y="14" width="16" height="6" rx="1" />
+      <path d="M7 7h.01M7 17h.01M11 7h6M11 17h6" />
+    </svg>
+  );
+}
+
+function UploadFile(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 3h8l4 4v14H6zM14 3v5h5" />
+      <path d="M12 17v-6M9.5 13.5 12 11l2.5 2.5" />
+    </svg>
+  );
+}
+
 const LAB_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   sqli: Database,
   xss: CodeBug,
   cmdi: Terminal,
   path: Folder,
   csrf: Bank,
+  idor: Access,
+  auth: Key,
+  jwt: Token,
+  ssrf: Server,
+  upload: UploadFile,
 };
 
 export function LabIcon({ id, ...props }: { id: string } & IconProps) {

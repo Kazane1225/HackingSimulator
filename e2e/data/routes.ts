@@ -6,5 +6,10 @@ export const ROUTES: { name: string; path: string }[] = [
   { name: "cmdi lab", path: "/#/lab/cmdi" },
   { name: "path traversal lab", path: "/#/lab/path" },
   { name: "csrf lab", path: "/#/lab/csrf" },
+  { name: "idor lab", path: "/#/lab/idor" },
+  { name: "authentication lab", path: "/#/lab/auth" },
+  { name: "jwt lab", path: "/#/lab/jwt" },
+  { name: "ssrf lab", path: "/#/lab/ssrf" },
+  { name: "file upload lab", path: "/#/lab/upload" },
   { name: "glossary", path: "/#/glossary" },
 ];

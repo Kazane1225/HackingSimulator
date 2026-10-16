@@ -151,6 +151,76 @@ export const GLOSSARY: GlossaryTerm[] = [
     labs: ["csrf"],
   },
   {
+    term: "認証 / 認可",
+    aliases: ["authentication", "authorization"],
+    description:
+      "認証は『誰であるか』を確認する処理、認可は『その人が対象の操作をしてよいか』を確認する処理。ログイン済みでも、他人のデータへの認可は別途必要です。",
+    labs: ["idor", "auth", "jwt"],
+  },
+  {
+    term: "IDOR",
+    aliases: ["Insecure Direct Object Reference", "オブジェクトレベル認可"],
+    description:
+      "URL や API の ID を変更したとき、サーバーが対象データへの権限を確認せず、他人のデータを読み書きできる脆弱性。",
+    labs: ["idor"],
+  },
+  {
+    term: "ブルートフォース / パスワードスプレー",
+    aliases: ["brute force", "password spraying", "辞書攻撃"],
+    description:
+      "多数のパスワードを試す攻撃。パスワードスプレーは少数のありがちなパスワードを多数のアカウントへ試し、単純なロックアウトを避けます。",
+    labs: ["auth"],
+  },
+  {
+    term: "セッション固定",
+    aliases: ["session fixation"],
+    description:
+      "攻撃者が事前に知っているセッション ID を被害者に使わせ、ログイン後も ID が更新されない場合にそのログイン状態を奪う攻撃。",
+    labs: ["auth"],
+  },
+  {
+    term: "MFA",
+    aliases: ["多要素認証", "Multi-Factor Authentication"],
+    description:
+      "知識・所持・生体など異なる種類の要素を複数使う認証。回復フローが弱いと、通常ログインの MFA を迂回されます。",
+    labs: ["auth"],
+  },
+  {
+    term: "JWT",
+    aliases: ["JSON Web Token", "alg", "kid"],
+    description:
+      "header.payload.signature からなるトークン形式。payload は暗号化されておらず、サーバーによる署名・アルゴリズム・クレームの検証が必要です。",
+    labs: ["jwt"],
+  },
+  {
+    term: "SSRF",
+    aliases: ["Server-Side Request Forgery", "サーバーサイドリクエストフォージェリ"],
+    description:
+      "サーバーの URL 取得機能を操作し、内部 API、localhost、クラウドメタデータなどへサーバー自身からリクエストさせる攻撃。",
+    labs: ["ssrf"],
+  },
+  {
+    term: "DNS Rebinding",
+    aliases: ["DNS リバインディング", "名前解決"],
+    description:
+      "同じホスト名の DNS 応答を途中で外部 IP から内部 IP へ変える手口。検証時と接続時の名前解決がずれると SSRF 対策を回避されます。",
+    labs: ["ssrf"],
+  },
+  {
+    term: "マジックバイト / ポリグロット",
+    aliases: ["magic bytes", "file signature", "polyglot"],
+    description:
+      "マジックバイトはファイル形式を示す先頭データ。ポリグロットは複数形式として解釈できるファイルで、先頭だけの検査を回避することがあります。",
+    labs: ["upload"],
+  },
+  {
+    term: "再エンコード",
+    aliases: ["re-encode", "画像再構成"],
+    description:
+      "受け取った画像を完全にデコードし、新しい画像データとして保存し直すこと。元データに埋め込まれた不要な内容を引き継がないための対策です。",
+    labs: ["upload"],
+  },
+  {
     term: "Proxy / Intercept",
     aliases: ["傍受", "Forward", "Burp"],
     description:

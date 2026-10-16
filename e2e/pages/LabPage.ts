@@ -72,6 +72,15 @@ export class LabPage {
     await this.forward();
   }
 
+  /** Replace several proxy fields and send. Used for multi-parameter labs. */
+  async sendAll(fields: Record<string, string>) {
+    await this.openPane("proxy");
+    for (const [name, value] of Object.entries(fields)) {
+      await this.proxyParam(name).fill(value);
+    }
+    await this.forward();
+  }
+
   async setIntercept(on: boolean) {
     await this.openPane("proxy");
     const toggle = this.pane("proxy").getByRole("checkbox", { name: /Intercept/ });
