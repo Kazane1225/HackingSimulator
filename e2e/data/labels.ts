@@ -35,4 +35,9 @@ export const LAB_TITLES: Record<string, string> = {
   cmdi: "コマンドインジェクション",
   path: "パストラバーサル",
   csrf: "CSRF",
+  idor: "IDOR",
+  auth: "認証 / Session",
+  jwt: "JWT",
+  ssrf: "SSRF",
+  upload: "Upload",
 };
