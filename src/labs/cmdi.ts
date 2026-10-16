@@ -137,14 +137,22 @@ function run(level: Level, input: LabInput): AttackResult {
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。入力をそのままシェルコマンドに連結する。",
-    hint: "入力はシェルコマンドに連結されます。1 行で複数コマンドを続けて実行する区切り文字は？",
+    hints: [
+      "「ソース」を読みましょう。入力はコマンドのどこに埋め込まれ、シェルはそれをどう解釈しますか？",
+      "入力はシェルコマンドに連結されます。1 行で複数コマンドを続けて実行する区切り文字は？",
+      "`;` の後ろに `cat flag.txt` を続けましょう。",
+    ],
     solution:
       "host に `8.8.8.8; cat flag.txt` を入力。`;` で ping の後に別コマンドを続けて実行できます。",
     code: `exec("ping -c 1 " + host);  // シェル経由`,
   },
   2: {
     defense: "セミコロン ( ; ) を除去する。",
-    hint: "`;` は使えません。でもコマンドを連結する演算子は他にもありますよね？",
+    hints: [
+      "Lv1 の手口は通りません。「ソース」で、除去される文字を確認しましょう。",
+      "`;` は使えません。でもコマンドを連結する演算子は他にもありますよね？",
+      "前のコマンドが成功したら次を実行する `&&` で、`cat flag.txt` を連結しましょう。",
+    ],
     solution:
       "host に `8.8.8.8 && cat flag.txt` を入力。`&&`（前が成功したら次を実行）で連結できます。`|` や `||` でも可。",
     code: `let h = host.replace(/;/g, "");
@@ -152,7 +160,11 @@ exec("ping -c 1 " + h);`,
   },
   3: {
     defense: "区切り文字 ; & | を除去する。",
-    hint: "セミコロンも && も | も消されます。改行や『コマンド置換』はどうでしょう？",
+    hints: [
+      "Lv2 の手口は通りません。ソースを読み、除去される文字と『除去されない文字』を比べましょう。",
+      "セミコロンも && も | も消されます。改行や『コマンド置換』はどうでしょう？",
+      "host 欄は複数行入力できます。1 行目に ping の宛先、2 行目にコマンドを書いてみましょう。",
+    ],
     solution:
       "host 欄（複数行入力可）で 1 行目に `8.8.8.8`、2 行目に `cat flag.txt` と改行区切りで入力。改行もコマンド区切りです。`$(cat flag.txt)` でも可。",
     code: `let h = host.replace(/[;&|]/g, "");
@@ -160,7 +172,11 @@ exec("ping -c 1 " + h);`,
   },
   4: {
     defense: "区切り文字 ; & | と改行を除去する。",
-    hint: "区切り文字も改行も消されます。でも『コマンドの出力をその場に埋め込む』構文は残っていませんか？",
+    hints: [
+      "Lv3 の手口は通りません。区切り文字を『使わず』に別のコマンドを実行する構文を探しましょう。",
+      "区切り文字も改行も消されます。でも『コマンドの出力をその場に埋め込む』構文は残っていませんか？",
+      "`$(コマンド)` はコマンド置換です。括弧内が先に実行され、その出力が展開されます。",
+    ],
     solution:
       "host に `8.8.8.8 $(cat flag.txt)` を入力。コマンド置換 `$(...)` は除去対象外なので、内部の cat が実行されます（バッククォート `` `cat flag.txt` `` でも可）。",
     code: `let h = host.replace(/[;&|\\r\\n]/g, ""); // $(...) を見落としている
@@ -168,7 +184,10 @@ exec("ping -c 1 " + h);`,
   },
   5: {
     defense: "入力を厳格に検証し、シェルを使わず引数配列で実行する。",
-    hint: "許可された文字のホスト名しか通りません。これは正しい対策です。",
+    hints: [
+      "許可された文字のホスト名しか通りません。これは正しい対策です。",
+      "「ソース」を読み、シェルを介さず引数配列で実行すると、なぜ `;` や `$()` が無害になるのかを考えましょう。",
+    ],
     solution:
       "このレベルは意図的に突破不可能です。ホスト名を許可リスト（英数字・ドット・ハイフン）で検証し、シェルを介さず `execFile(\"ping\", [\"-c\",\"1\", host])` のように引数配列で実行すれば、メタ文字は実行されません。",
     code: `if (!/^[A-Za-z0-9.\\-]+$/.test(host)) throw new Error("invalid host");
@@ -183,7 +202,20 @@ export const cmdiLab: Lab = {
     shortTitle: "コマンドインジェクション",
     category: "インジェクション",
     objective: "ping ツールを悪用して flag.txt の内容を読み出す。",
-    summary: "シェルに渡されるホスト名にコマンドを注入し、任意コマンドを実行する。",  },
+    summary: "シェルに渡されるホスト名にコマンドを注入し、任意コマンドを実行する。",
+    standards: {
+      owasp: { code: "A03:2021", name: "Injection", url: "https://owasp.org/Top10/A03_2021-Injection" },
+      cwe: [{ id: 78, name: "Improper Neutralization of Special Elements used in an OS Command (OS Command Injection)" }],
+    },
+    references: [
+      {
+        title: "OWASP OS Command Injection Defense Cheat Sheet",
+        url: "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html",
+      },
+      { title: "PortSwigger Web Security Academy — OS command injection", url: "https://portswigger.net/web-security/os-command-injection" },
+      { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
+    ],
+  },
   fields: [
     {
       name: "host",

@@ -40,12 +40,27 @@ export interface AttackResult {
 export interface LevelSpec {
   /** What the defense does, in one line. */
   defense: string;
-  /** A nudge that does not give the answer away (always visible). */
-  hint: string;
+  /**
+   * Nudges that do not give the answer away, ordered from a general pointer to
+   * a concrete technique. The UI reveals them one at a time (always available).
+   */
+  hints: string[];
   /** A working payload / approach (revealed only after the level is solved). */
   solution: string;
   /** Pseudo server-side code of the defense, shown for code-review practice. */
   code: string;
+}
+
+export interface Reference {
+  title: string;
+  url: string;
+}
+
+/** Where the vulnerability class sits in common taxonomies. */
+export interface Standards {
+  /** OWASP Top 10:2021 category. */
+  owasp: { code: string; name: string; url: string };
+  cwe: { id: number; name: string }[];
 }
 
 export interface LabMeta {
@@ -57,6 +72,9 @@ export interface LabMeta {
   objective: string;
   /** One-line summary shown on the dashboard. */
   summary: string;
+  standards: Standards;
+  /** Further reading shown in the 解説 tab. */
+  references: Reference[];
 }
 
 /** A complete lab: metadata, input shape, per-level logic and teaching text. */

@@ -119,7 +119,11 @@ function run(level: Level, input: LabInput): AttackResult {
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。BASE + '/' + 入力 をそのまま読み込む。",
-    hint: "読み込みは公開フォルダ基準です。1 つ上の階層へ移動する記法は？",
+    hints: [
+      "「ソース」を読みましょう。ベースディレクトリと入力はどのように結合されますか？",
+      "読み込みは公開フォルダ基準です。1 つ上の階層へ移動する記法は？",
+      "`../` を何度か重ねて、ルートまで遡りましょう。目標は `/etc/passwd` です。",
+    ],
     solution:
       "name に `../../../etc/passwd` を入力。`..` でベースディレクトリより上に遡れます。",
     code: `const path = BASE + "/" + req.query.name;
@@ -127,7 +131,11 @@ res.send(fs.readFileSync(path));`,
   },
   2: {
     defense: "`../` を除去する（ただし 1 回だけ）。",
-    hint: "`../` は消されます…が、フィルタは一度しか走りません。除去後に `../` が再生成される入力は？",
+    hints: [
+      "Lv1 の入力は通りません。「ソース」で、除去が『何回』行われるかを確認しましょう。",
+      "`../` は消されます…が、フィルタは一度しか走りません。除去後に `../` が再生成される入力は？",
+      "`....//` の中央にある `../` が 1 回除去されると、何が残りますか？",
+    ],
     solution:
       "name に `....//....//....//etc/passwd` を入力。`....//` の中央の `../` が 1 回だけ除去され `../` が復活します。",
     code: `let name = req.query.name.replace(/\\.\\.\\//g, ""); // 1回だけ
@@ -135,7 +143,11 @@ const path = BASE + "/" + name;`,
   },
   3: {
     defense: "`../` を繰り返し除去する（冪等）。",
-    hint: "前方スラッシュの `../` は完全に消えます。でもパスの区切りは `/` だけでしょうか？",
+    hints: [
+      "Lv2 の手口は通りません。ソースを読み、フィルタが対象にしている区切り文字を確認しましょう。",
+      "前方スラッシュの `../` は完全に消えます。でもパスの区切りは `/` だけでしょうか？",
+      "Windows 形式の区切り文字、バックスラッシュを使った `..\\` を試しましょう。",
+    ],
     solution:
       "name に `..\\..\\..\\etc\\passwd` を入力。バックスラッシュ区切りはフィルタ対象外ですが、OS はこれも区切りとして解釈します。",
     code: `const strip = s => { let p; do { p = s;
@@ -144,7 +156,11 @@ const path = BASE + "/" + strip(req.query.name);`,
   },
   4: {
     defense: "`../` と `..\\` を繰り返し除去する。ただしフィルタは URL デコード前に走る。",
-    hint: "両方のスラッシュが消されます。でもフィルタが見ているのは『デコード前』の文字列。エンコードして隠せませんか？",
+    hints: [
+      "Lv3 の手口は通りません。フィルタが『どの時点の文字列』を見ているかに注目しましょう。",
+      "両方のスラッシュが消されます。でもフィルタが見ているのは『デコード前』の文字列。エンコードして隠せませんか？",
+      "`.` を `%2e`、`/` を `%2f` に置き換えましょう。デコードされるのはフィルタの後です。",
+    ],
     solution:
       "name に `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd` を入力。`%2e%2e%2f` はフィルタをすり抜け、後段のデコードで `../` に戻ります。",
     code: `let name = strip(req.query.name); // ← デコード前に除去
@@ -153,7 +169,10 @@ const path = BASE + "/" + name;`,
   },
   5: {
     defense: "デコード後に正規化し、最終パスがベース配下か検証する。",
-    hint: "正規化してからベース配下かを確認しています。これは正しい対策です。",
+    hints: [
+      "正規化してからベース配下かを確認しています。これは正しい対策です。",
+      "「ソース」を読み、『デコード → 正規化 → ベース配下か検証』の順序がなぜ重要かを考えましょう。",
+    ],
     solution:
       "このレベルは意図的に突破不可能です。先にデコード・正規化（canonicalize）してから、解決後の絶対パスがベースディレクトリ配下にあることを検証します。脱出するパスはすべて拒否されます。",
     code: `const name = decodeURIComponent(req.query.name);
@@ -170,7 +189,21 @@ export const pathTraversalLab: Lab = {
     shortTitle: "パストラバーサル",
     category: "不適切なアクセス制御",
     objective: "公開フォルダを脱出し、/etc/passwd を読み出す。",
-    summary: "ファイル名パラメータに ../ などを注入し、ベースディレクトリの外を読む。",  },
+    summary: "ファイル名パラメータに ../ などを注入し、ベースディレクトリの外を読む。",
+    standards: {
+      owasp: {
+        code: "A01:2021",
+        name: "Broken Access Control",
+        url: "https://owasp.org/Top10/A01_2021-Broken_Access_Control",
+      },
+      cwe: [{ id: 22, name: "Improper Limitation of a Pathname to a Restricted Directory (Path Traversal)" }],
+    },
+    references: [
+      { title: "OWASP Path Traversal", url: "https://community.owasp.org/attacks/Path_Traversal" },
+      { title: "PortSwigger Web Security Academy — Path traversal", url: "https://portswigger.net/web-security/file-path-traversal" },
+      { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
+    ],
+  },
   fields: [
     {
       name: "name",

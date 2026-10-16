@@ -35,6 +35,7 @@ export function Home({ progress, onReset }: Props) {
             <tr>
               <th>ラボ</th>
               <th>分類</th>
+              <th>OWASP</th>
               <th>目標</th>
               {LEVELS.map((lv) => (
                 <th key={lv} className="lv-col">
@@ -55,6 +56,9 @@ export function Home({ progress, onReset }: Props) {
                     </a>
                   </td>
                   <td className="dim">{lab.meta.category}</td>
+                  <td className="mono dim" title={`OWASP Top 10:2021 ${lab.meta.standards.owasp.name}`}>
+                    {lab.meta.standards.owasp.code}
+                  </td>
                   <td className="dim objective-cell">{lab.meta.objective}</td>
                   {LEVELS.map((lv) => (
                     <td key={lv} className="lv-col">
@@ -81,9 +85,12 @@ export function Home({ progress, onReset }: Props) {
           </div>
           <ol className="steps">
             <li>ラボとレベルを選ぶ。Lv1〜4 は少しずつ強化される不完全な防御です。</li>
-            <li>「ソース」タブでサーバー側の処理を読み、防御の穴を探す。</li>
+            <li>「ソース」タブでサーバー側の処理を読み、防御の穴を探す。詰まったら「ヒント」を 1 段ずつ開く。</li>
             <li>リクエストを組み立てて送信し、目標を達成する。</li>
-            <li>クリア後に解答と解説を読み、なぜ通ったのか・どう防ぐのかを確認する。</li>
+            <li>
+              クリア後に解答と解説を読み、なぜ通ったのか・どう防ぐのかを確認する。分類（OWASP / CWE）と参考資料で深掘りし、わからない用語は
+              <a href="#/glossary">用語集</a>で確認する。
+            </li>
           </ol>
         </section>
         <section className="pane">
@@ -98,7 +105,7 @@ export function Home({ progress, onReset }: Props) {
             <dt>Lv5</dt>
             <dd>正しい実装（突破不可）。なぜ安全かを学ぶレベルです</dd>
             <dt>ヒント</dt>
-            <dd>いつでも閲覧可。解答はクリア後に解放されます</dd>
+            <dd>ヒントは 3 段階（Lv5 は 2 段階）で、必要なぶんだけ開けます。解答はクリア後に解放されます</dd>
           </dl>
         </section>
       </div>

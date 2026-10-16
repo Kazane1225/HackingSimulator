@@ -280,7 +280,11 @@ function run(level: Level, input: LabInput): AttackResult {
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。入力をそのまま SQL に連結する。",
-    hint: "入力はクオートの内側に入ります。クオートを閉じて、後続の条件をコメントアウトできませんか？",
+    hints: [
+      "「ソース」タブを読みましょう。入力は SQL 文のどこに、どのように埋め込まれていますか？",
+      "入力はクオートの内側に入ります。クオートを閉じて、後続の条件をコメントアウトできませんか？",
+      "SQL のコメント記号 `--` が使えます（直後に半角スペースが必要です）。パスワードの条件を無効化しましょう。",
+    ],
     solution:
       "username に `admin'--` を入力（末尾の半角スペースに注意: `admin'-- `）。クオートを閉じ、`-- ` 以降（AND password=... の部分）をコメントとして無効化します。",
     code: `const q = "SELECT * FROM users WHERE username='" + username
@@ -289,7 +293,11 @@ db.query(q);`,
   },
   2: {
     defense: "コメント記号 (--, #, /* */) を除去する。",
-    hint: "コメントは使えません。でも WHERE 全体を常に真にする方法は、コメント以外にもありますよね？",
+    hints: [
+      "Lv1 の入力は通りません。「ソース」で、除去される記号を確認しましょう。",
+      "コメントは使えません。でも WHERE 全体を常に真にする方法は、コメント以外にもありますよね？",
+      "論理演算子 `OR` で、`'1'='1'` のような常に真になる式をつなぎましょう。",
+    ],
     solution:
       "username に `admin' OR '1'='1` を入力。`WHERE username='admin' OR '1'='1' AND password='...'` となり、OR により常に真になって admin 行が返ります。",
     code: `let u = username.replace(/--|#|\\/\\*|\\*\\//g, "");
@@ -298,7 +306,11 @@ const q = "...WHERE username='" + u + "' AND password='" + p + "'";`,
   },
   3: {
     defense: "コメントに加え、英単語の OR / AND を（大小文字無視・繰り返し）除去する。",
-    hint: "英単語の OR が消されます。OR と同じ意味を持つ『記号』は他にありませんか？",
+    hints: [
+      "Lv2 の手口は通りません。ソースを読み、除去されるのは『英単語』なのか『演算子の意味』なのかを考えましょう。",
+      "英単語の OR が消されます。OR と同じ意味を持つ『記号』は他にありませんか？",
+      "MySQL などでは `||` が論理和として働きます。",
+    ],
     solution:
       "username に `admin'||'1'='1` を入力。MySQL などでは `||` が論理和として評価され、OR と同じく常に真になります。ブラックリストが英単語しか見ていない盲点です。",
     code: `const strip = (s) => { let p; do { p = s;
@@ -308,7 +320,11 @@ const q = "...WHERE username='" + u + "' AND password='" + p + "'";`,
   },
   4: {
     defense: "ブラックリストを単一パスの置換に書き換え（部分文字列も除去）。繰り返し適用していない。",
-    hint: "フィルタは一度しか走りません。『除去した結果、禁止語が再生成される』ような入力を作れませんか？",
+    hints: [
+      "Lv3 の手口は通りません。ソースを読み、除去が『何回』行われるかに注目しましょう。",
+      "フィルタは一度しか走りません。『除去した結果、禁止語が再生成される』ような入力を作れませんか？",
+      "`or` の途中に `or` を挟んだ文字列（`oorr`）を 1 回除去すると、何が残りますか？",
+    ],
     solution:
       "username に `admin' oorr '1'='1` を入力。`oorr` から真ん中の `or` が一度だけ除去され `or` が復活 → `WHERE username='admin' or '1'='1' ...` となり認証バイパス成立。非冪等なサニタイズの典型バグです。",
     code: `let u = username.replace(/--|#|\\/\\*|\\*\\//g, "")
@@ -318,7 +334,10 @@ const q = "...WHERE username='" + u + "' AND password='" + p + "'";`,
   },
   5: {
     defense: "プレースホルダ（準備済みステートメント）で入力を値としてバインド。",
-    hint: "入力は SQL の構造に影響できません。これは正しい対策です。",
+    hints: [
+      "入力は SQL 構造に影響できません。これは正しい対策です。",
+      "「ソース」を読み、入力が SQL の『構文』ではなく『値』として扱われる理由を考えましょう。",
+    ],
     solution:
       "このレベルは意図的に突破不可能です。パラメータ化クエリでは入力が常に『値』として扱われ、クオートを閉じても構造は変わりません。これが本来あるべき実装です。",
     code: `db.query(
@@ -335,7 +354,20 @@ export const sqliLab: Lab = {
     shortTitle: "SQL インジェクション",
     category: "インジェクション",
     objective: "正しいパスワードを知らずに admin としてログインする。",
-    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証を回避する。",  },
+    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証を回避する。",
+    standards: {
+      owasp: { code: "A03:2021", name: "Injection", url: "https://owasp.org/Top10/A03_2021-Injection" },
+      cwe: [{ id: 89, name: "Improper Neutralization of Special Elements used in an SQL Command (SQL Injection)" }],
+    },
+    references: [
+      {
+        title: "OWASP SQL Injection Prevention Cheat Sheet",
+        url: "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      },
+      { title: "PortSwigger Web Security Academy — SQL injection", url: "https://portswigger.net/web-security/sql-injection" },
+      { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
+    ],
+  },
   fields: [
     { name: "username", label: "ユーザー名", placeholder: "admin", mono: true, default: "admin" },
     { name: "password", label: "パスワード", placeholder: "password", mono: true, default: "wrong" },

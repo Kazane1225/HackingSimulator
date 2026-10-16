@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Glossary } from "./components/Glossary";
 import { Home } from "./components/Home";
 import { LabPage } from "./components/LabPage";
 import { Sidebar } from "./components/Sidebar";
@@ -45,6 +46,8 @@ export function App() {
               <span className="crumb-sep">/</span>
               <span>{lab.meta.shortTitle}</span>
             </>
+          ) : route === "/glossary" ? (
+            <span>用語集</span>
           ) : (
             <span>ダッシュボード</span>
           )}
@@ -61,10 +64,12 @@ export function App() {
       </header>
 
       <div className="workspace">
-        <Sidebar activeId={lab?.meta.id} progress={progress} />
+        <Sidebar activeId={lab?.meta.id} progress={progress} glossaryActive={route === "/glossary"} />
         <main className="main">
           {lab ? (
             <LabPage key={lab.meta.id} lab={lab} isSolved={isSolved} markSolved={markSolved} />
+          ) : route === "/glossary" ? (
+            <Glossary />
           ) : (
             <Home progress={progress} onReset={reset} />
           )}

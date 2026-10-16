@@ -97,13 +97,21 @@ function run(level: Level, input: LabInput): AttackResult {
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。コメントをそのまま HTML に埋め込む。",
-    hint: "入力はページの HTML にそのまま差し込まれます。最も素直なスクリプト注入は？",
+    hints: [
+      "「ソース」タブを読みましょう。コメントは加工されずに HTML へ入ります。ブラウザは HTML のどの部分を『実行』しますか？",
+      "入力はページの HTML にそのまま差し込まれます。最も素直なスクリプト注入は？",
+      "`<script>` タグの中で `alert(1)` を呼びましょう。",
+    ],
     solution: "`<script>alert(1)</script>` を入力。そのままスクリプトとして実行されます。",
     code: `res.send('<div class="comment">' + comment + '</div>');`,
   },
   2: {
     defense: "<script> タグを（繰り返し）除去する。",
-    hint: "script タグは消されます。でも JavaScript を動かす方法はタグだけではありません。イベントハンドラは？",
+    hints: [
+      "Lv1 の入力は通りません。「ソース」で、何が除去されるのかを確認しましょう。",
+      "script タグは消されます。でも JavaScript を動かす方法はタグだけではありません。イベントハンドラは？",
+      "画像の読み込みに失敗すると発火するイベントがあります。`<img>` と `onerror` の組み合わせを試しましょう。",
+    ],
     solution:
       "`<img src=x onerror=alert(1)>` を入力。存在しない画像の読み込み失敗で onerror が発火します。",
     code: `let safe = comment.replace(/<\\/?script[^>]*>/gi, "");
@@ -111,7 +119,11 @@ res.send('<div class="comment">' + safe + '</div>');`,
   },
   3: {
     defense: "script タグに加え、代表的なハンドラ (onerror/onload/onclick/onmouseover) を除去する。",
-    hint: "よく使うハンドラはブロックされています。ブラックリストに『載っていない』ハンドラは？",
+    hints: [
+      "Lv2 の手口は通りません。ソースの正規表現で、ブロックされているハンドラを正確に読み取りましょう。",
+      "よく使うハンドラはブロックされています。ブラックリストに『載っていない』ハンドラは？",
+      "要素が開いたときに発火する `ontoggle` と、`<details open>` を組み合わせてみましょう。",
+    ],
     solution:
       "`<details open ontoggle=alert(1)>` を入力。open 状態の details は描画時に toggle イベントを発火し、ontoggle はブラックリスト外なので生き残ります（`<input autofocus onfocus=alert(1)>` も同じ理屈ですが、クロスオリジン iframe では autofocus がブロックされることがあります）。",
     code: `let safe = comment.replace(/<\\/?script[^>]*>/gi, "")
@@ -119,7 +131,11 @@ res.send('<div class="comment">' + safe + '</div>');`,
   },
   4: {
     defense: "ハンドラのブラックリストを拡充。ただし単一パス（非冪等）で適用。",
-    hint: "フィルタは一度しか走りません。除去された結果、ハンドラ名が『再生成』される入力は作れますか？",
+    hints: [
+      "ブラックリストが増えました。ただしソースを読むと、ハンドラの除去が『何回』行われるかに注目できます。",
+      "フィルタは一度しか走りません。除去された結果、ハンドラ名が『再生成』される入力は作れますか？",
+      "`onerror` の途中に `onerror` を挟んだ文字列（`ononerrorerror`）を 1 回除去すると、何が残りますか？",
+    ],
     solution:
       "`<img src=x ononerrorerror=alert(1)>` を入力。`ononerrorerror` から真ん中の `onerror` が一度だけ除去され `onerror` が復活します。",
     code: `let safe = comment.replace(/<\\/?script[^>]*>/gi, "")
@@ -128,7 +144,10 @@ res.send('<div class="comment">' + safe + '</div>');`,
   },
   5: {
     defense: "出力時に HTML エンティティへエスケープ（コンテキストに応じた出力エンコード）。",
-    hint: "特殊文字がすべて実体参照に変換されます。これは正しい対策です。",
+    hints: [
+      "特殊文字がすべて実体参照に変換されます。これは正しい対策です。",
+      "「ソース」と「解説」を読み、なぜ入力が『コード』ではなく『テキスト』のまま表示されるのか説明してみましょう。",
+    ],
     solution:
       "このレベルは意図的に突破不可能です。`<` や `>` が `&lt;` `&gt;` に変換され、入力はコードではなく常にテキストとして表示されます。ブラックリストではなく『出力エンコード』が本来の対策です。",
     code: `const enc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;")
@@ -144,7 +163,20 @@ export const xssLab: Lab = {
     shortTitle: "XSS",
     category: "インジェクション",
     objective: "コメント欄を悪用し、ページ上で alert() を実行させる。",
-    summary: "反射されたコメントにスクリプトを注入し、サンドボックス内で任意 JS を実行する。",  },
+    summary: "反射されたコメントにスクリプトを注入し、サンドボックス内で任意 JS を実行する。",
+    standards: {
+      owasp: { code: "A03:2021", name: "Injection", url: "https://owasp.org/Top10/A03_2021-Injection" },
+      cwe: [{ id: 79, name: "Improper Neutralization of Input During Web Page Generation (Cross-site Scripting)" }],
+    },
+    references: [
+      {
+        title: "OWASP Cross Site Scripting Prevention Cheat Sheet",
+        url: "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
+      },
+      { title: "PortSwigger Web Security Academy — XSS", url: "https://portswigger.net/web-security/cross-site-scripting" },
+      { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
+    ],
+  },
   fields: [
     {
       name: "comment",

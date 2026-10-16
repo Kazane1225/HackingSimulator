@@ -6,9 +6,10 @@ import { LabIcon } from "./icons";
 interface Props {
   activeId?: string;
   progress: Progress;
+  glossaryActive?: boolean;
 }
 
-export function Sidebar({ activeId, progress }: Props) {
+export function Sidebar({ activeId, progress, glossaryActive }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-section">ラボ</div>
@@ -32,6 +33,12 @@ export function Sidebar({ activeId, progress }: Props) {
             </a>
           );
         })}
+      </nav>
+      <div className="sidebar-section">学習資料</div>
+      <nav>
+        <a href="#/glossary" className={`side-item ${glossaryActive ? "active" : ""}`}>
+          <span className="side-label">用語集</span>
+        </a>
       </nav>
     </aside>
   );

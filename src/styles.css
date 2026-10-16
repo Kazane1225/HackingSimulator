@@ -1181,6 +1181,104 @@ button {
   margin: 8px 0 0;
 }
 
+/* ---------- learning aids ---------- */
+.steps a,
+.meta-block a,
+.glossary-item a:not(.tag) {
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hint-item + .hint-item {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.hint-label {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 11px;
+}
+.hint-item + .btn,
+.hint-item + .hint-end {
+  margin-top: 12px;
+}
+.hint-end {
+  font-size: 12px;
+}
+.meta-block {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.meta-title {
+  margin-top: 8px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.meta-block .kv {
+  padding: 6px 0 4px;
+}
+.ref-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--dim);
+}
+.glossary-search {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.glossary-search input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+}
+.glossary {
+  margin: 0;
+}
+.glossary-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.glossary-item:last-child {
+  border-bottom: 0;
+}
+.glossary-item dt {
+  font-weight: 600;
+}
+.glossary-alias {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+}
+.glossary-item dd {
+  margin: 4px 0 0;
+  color: var(--dim);
+}
+.glossary-labs {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tag {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--dim);
+  font-size: 11px;
+}
+.tag:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 @media (max-width: 960px) {
   .browser-viewport {
     min-height: 380px;
