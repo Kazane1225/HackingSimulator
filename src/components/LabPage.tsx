@@ -8,6 +8,14 @@ import { RichText } from "./RichText";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
 
+/** On narrow screens the three workbench panes are shown one at a time. */
+type MobileTab = "target" | "proxy" | "inspector";
+const MOBILE_TABS: { key: MobileTab; label: string }[] = [
+  { key: "target", label: "標的アプリ" },
+  { key: "proxy", label: "Proxy" },
+  { key: "inspector", label: "ヒント・解説" },
+];
+
 interface Props {
   lab: Lab;
   isSolved: (labId: string, level: Level) => boolean;
@@ -32,6 +40,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [held, setHeld] = useState(false);
   const [inspector, setInspector] = useState<InspectorTab>("hint");
   const [hintsShown, setHintsShown] = useState<Partial<Record<Level, number>>>({});
+  const [mobileTab, setMobileTab] = useState<MobileTab>("target");
 
   const spec = lab.levels[level];
   const shownHints = Math.min(hintsShown[level] ?? 1, spec.hints.length);
@@ -71,6 +80,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     if (patch) setInputs(requestInputs);
     if (intercept) {
       setHeld(true);
+      setMobileTab("proxy");
     } else {
       forward(requestInputs);
     }
@@ -135,7 +145,22 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
         <span>{spec.defense}</span>
       </div>
 
-      <div className="workbench">
+      <div className="mobile-tabs" role="tablist" aria-label="表示ペイン">
+        {MOBILE_TABS.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={mobileTab === t.key}
+            className={`mobile-tab ${mobileTab === t.key ? "active" : ""}`}
+            onClick={() => setMobileTab(t.key)}
+          >
+            {t.label}
+            {t.key === "proxy" && held && <span className="mobile-tab-dot" aria-label="傍受中" />}
+          </button>
+        ))}
+      </div>
+
+      <div className={`workbench show-${mobileTab}`}>
         <section className="wb-target">
           <BrowserChrome url={ui.url} title={ui.site} onReload={clear}>
             {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire })}
@@ -169,6 +194,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                       rows={f.name === "html" ? 6 : 3}
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
                       onChange={(e) => setField(f.name, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -183,6 +210,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
                       autoComplete="off"
+                      autoCapitalize="off"
+                      autoCorrect="off"
                       onChange={(e) => setField(f.name, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {

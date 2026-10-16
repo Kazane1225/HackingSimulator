@@ -72,6 +72,8 @@ const sqli: LabUI = {
               value={inputs.username ?? ""}
               onChange={(e) => setField("username", e.target.value)}
               autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
               spellCheck={false}
             />
           </label>
@@ -83,6 +85,8 @@ const sqli: LabUI = {
               value={inputs.password ?? ""}
               onChange={(e) => setField("password", e.target.value)}
               autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
               spellCheck={false}
             />
           </label>
@@ -121,6 +125,8 @@ const xss: LabUI = {
             rows={3}
             value={inputs.comment ?? ""}
             onChange={(e) => setField("comment", e.target.value)}
+            autoCapitalize="off"
+            autoCorrect="off"
             spellCheck={false}
           />
         </label>
@@ -164,6 +170,8 @@ const cmdi: LabUI = {
             rows={2}
             value={inputs.host ?? ""}
             onChange={(e) => setField("host", e.target.value)}
+            autoCapitalize="off"
+            autoCorrect="off"
             spellCheck={false}
           />
         </label>
@@ -209,6 +217,8 @@ const path: LabUI = {
           className="mono"
           value={inputs.name ?? ""}
           onChange={(e) => setField("name", e.target.value)}
+          autoCapitalize="off"
+          autoCorrect="off"
           spellCheck={false}
           autoComplete="off"
         />
@@ -263,6 +273,8 @@ const csrf: LabUI = {
                 rows={6}
                 value={inputs.html ?? ""}
                 onChange={(e) => setField("html", e.target.value)}
+                autoCapitalize="off"
+                autoCorrect="off"
                 spellCheck={false}
               />
             </label>

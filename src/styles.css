@@ -564,17 +564,143 @@ button {
     grid-template-columns: 1fr;
     grid-template-areas: "target" "proxy" "inspector";
   }
+  .page .mobile-tabs {
+    display: flex;
+  }
+  .workbench.show-target > :not(.wb-target),
+  .workbench.show-proxy > :not(.wb-proxy),
+  .workbench.show-inspector > :not(.wb-inspector) {
+    display: none;
+  }
 }
 @media (max-width: 760px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  /* The sidebar becomes a horizontally scrollable tab strip. */
+  .sidebar {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 6px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .sidebar nav {
+    display: flex;
   }
   .sidebar {
+    scrollbar-width: none;
+  }
+  .lab-table .lv-col {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .sidebar-section {
     display: none;
+  }
+  .side-item {
+    padding: 10px 12px;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .side-item.active {
+    border-bottom-color: var(--accent);
+  }
+  .page {
+    padding: 14px 12px 24px;
+  }
+  .page-head {
+    flex-direction: column;
+    gap: 10px;
   }
   .pane-row {
     grid-template-columns: 1fr;
   }
+  /* Keep the dashboard table readable: name and level marks only. */
+  .lab-table th:nth-child(2),
+  .lab-table th:nth-child(3),
+  .lab-table th:nth-child(4),
+  .lab-table td:nth-child(2),
+  .lab-table td:nth-child(3),
+  .lab-table td:nth-child(4) {
+    display: none;
+  }
+  .titlebar-sep,
+  .titlebar-path {
+    display: none;
+  }
+  .meter {
+    width: 60px;
+  }
+  .statusbar .status-item:last-child {
+    display: none;
+  }
+  .status-item {
+    white-space: nowrap;
+  }
+  .lab-toolbar {
+    gap: 10px;
+  }
+  .segmented {
+    width: 100%;
+  }
+  .seg {
+    flex: 1;
+    justify-content: center;
+    padding: 0 6px;
+  }
+}
+
+/* Touch devices: larger tap targets, and 16px inputs so iOS does not zoom on focus. */
+@media (pointer: coarse) {
+  .btn,
+  .seg,
+  .pane-tab,
+  .mobile-tab {
+    min-height: 40px;
+  }
+  input:not([type="checkbox"]),
+  textarea {
+    font-size: 16px;
+  }
+}
+
+.mobile-tabs {
+  display: none;
+  margin: 0 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mobile-tab {
+  position: relative;
+  flex: 1;
+  min-height: 36px;
+  padding: 0 8px;
+  background: var(--pane);
+  border: none;
+  border-right: 1px solid var(--line);
+  color: var(--dim);
+  font: inherit;
+  cursor: pointer;
+}
+.mobile-tab:last-child {
+  border-right: none;
+}
+.mobile-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mobile-tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 /* ---------- fake browser ---------- */
