@@ -1,11 +1,14 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
 
-const encode = (value: object) =>
-  btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-const makeToken = (header: object, payload: object, signature: string) =>
-  `${encode(header)}.${encode(payload)}.${signature}`;
+export function encodeJwtPart(value: object): string {
+  return btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
 
-function decodePart(part: string): Record<string, unknown> | null {
+export function makeJwt(header: object, payload: object, signature: string): string {
+  return `${encodeJwtPart(header)}.${encodeJwtPart(payload)}.${signature}`;
+}
+
+export function decodeJwtPart(part: string): Record<string, unknown> | null {
   try {
     const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
     return JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=")));
@@ -14,11 +17,11 @@ function decodePart(part: string): Record<string, unknown> | null {
   }
 }
 
-const USER_TOKEN = makeToken({ alg: "RS256", typ: "JWT", kid: "key-2026" }, { sub: "alice", role: "user" }, "valid-user-signature");
-const NONE_TOKEN = makeToken({ alg: "none", typ: "JWT" }, { sub: "attacker", role: "admin" }, "");
-const WEAK_TOKEN = makeToken({ alg: "HS256", typ: "JWT" }, { sub: "attacker", role: "admin" }, "weak-secret-signature");
-const UNVERIFIED_TOKEN = makeToken({ alg: "RS256", typ: "JWT" }, { sub: "attacker", role: "admin" }, "anything");
-const KID_TOKEN = makeToken(
+const USER_TOKEN = makeJwt({ alg: "RS256", typ: "JWT", kid: "key-2026" }, { sub: "alice", role: "user" }, "valid-user-signature");
+const NONE_TOKEN = makeJwt({ alg: "none", typ: "JWT" }, { sub: "attacker", role: "admin" }, "");
+const WEAK_TOKEN = makeJwt({ alg: "HS256", typ: "JWT" }, { sub: "attacker", role: "admin" }, "weak-secret-signature");
+const UNVERIFIED_TOKEN = makeJwt({ alg: "RS256", typ: "JWT" }, { sub: "attacker", role: "admin" }, "anything");
+const KID_TOKEN = makeJwt(
   { alg: "RS256", typ: "JWT", kid: "../../uploads/attacker.pem" },
   { sub: "attacker", role: "admin" },
   "attacker-key-signature",
@@ -27,8 +30,8 @@ const KID_TOKEN = makeToken(
 function run(level: Level, input: LabInput): AttackResult {
   const token = (input.token ?? "").trim();
   const [head = "", body = "", signature = ""] = token.split(".");
-  const header = decodePart(head);
-  const payload = decodePart(body);
+  const header = decodeJwtPart(head);
+  const payload = decodeJwtPart(body);
   if (!header || !payload) {
     return { solved: false, output: ["[401] JWT の形式が不正です。"], note: "header.payload.signature の形式を確認してください。" };
   }

@@ -34,6 +34,11 @@ export interface AttackResult {
    * real execution as the source of truth for {@link AttackResult.solved}.
    */
   renderHtml?: string;
+  /**
+   * The request succeeded as a normal user action (e.g. viewing your own
+   * order). The workbench shows "通常応答" instead of treating it as a failed attack.
+   */
+  benign?: boolean;
 }
 
 /** Educational description of one security level of a lab. */
