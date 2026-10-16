@@ -1,9 +1,10 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 // Built from fragments so training credentials are not mistaken for live
 // username/password pairs by repository secret scanners.
 const ADMIN_PASSWORD_LV2 = ["Spring", "2026", "!"].join("");
-const ADMIN_PASSWORD_LV4 = ["correct", "horse", "battery"].join("-");
+const DEBUG_MFA = "482016";
 
 function run(level: Level, input: LabInput): AttackResult {
   const username = (input.username ?? "").trim();
@@ -12,6 +13,7 @@ function run(level: Level, input: LabInput): AttackResult {
   const mfaCode = (input.mfaCode ?? "").trim();
   let taken = false;
   let reason = "";
+  let debugMail: string | null = null;
 
   if (level === 1) {
     taken = username === "admin" && password === "password123";
@@ -22,28 +24,48 @@ function run(level: Level, input: LabInput): AttackResult {
       ? "ユーザー列挙後、ロックアウト対象外の低頻度試行で弱いパスワードを特定しました。"
       : username === "admin" ? "パスワードが違います。" : "ユーザーが存在しません。";
   } else if (level === 3) {
-    taken = sessionId === "fixed-admin-session";
+    taken = username === "admin" && sessionId === "reset-admin";
     reason = taken
-      ? "ログイン後もセッション ID が再発行されず、固定したセッションを奪取しました。"
-      : "認証情報は無効です。";
+      ? "予測可能なリセットトークンでパスワードを再設定し、ログインしました。"
+      : "パスワードは強化済みです。リセットトークンが必要です。";
   } else if (level === 4) {
-    taken = username === "admin" && password === ADMIN_PASSWORD_LV4 && mfaCode === "recovery";
-    reason = taken
-      ? "回復フローが MFA を迂回し、パスワードだけでログインしました。"
-      : "MFA を含む認証に失敗しました。";
+    const passwordOk = username === "admin" && password === ADMIN_PASSWORD_LV2;
+    const mfaOk = mfaCode === DEBUG_MFA;
+    taken = passwordOk && mfaOk;
+    if (taken) {
+      reason = "パスワードスプレー後、デバッグ応答に出た MFA コードでログインしました。";
+    } else if (passwordOk) {
+      reason = "パスワードは正しいですが MFA が必要です。";
+      debugMail = `X-Debug-Mail: Your MFA code is ${DEBUG_MFA}`;
+    } else {
+      reason = "MFA を含む認証に失敗しました。";
+    }
   } else {
     reason = "強固なパスワード、再発行されるセッション、MFA、回復フローの再認証により拒否しました。";
   }
 
-  return {
-    solved: taken,
-    output: [
-      "POST /login",
-      `username=${username || "(空)"} session=${sessionId || "(新規)"} mfa=${mfaCode || "(なし)"}`,
-      taken ? "[200 OK] 管理コンソール / admin としてログイン" : `[401 UNAUTHORIZED] ${reason}`,
-    ],
-    note: taken ? "admin アカウントのセッションを取得しました。" : reason,
-  };
+  return traced(
+    {
+      solved: taken,
+      output: [
+        "POST /login",
+        `username=${username || "(空)"} reset=${sessionId || "(なし)"} mfa=${mfaCode || "(なし)"}`,
+        ...(debugMail ? [debugMail] : []),
+        taken ? "[200 OK] 管理コンソール / admin としてログイン" : `[401 UNAUTHORIZED] ${reason}`,
+      ],
+      note: taken ? "admin アカウントのセッションを取得しました。" : reason,
+      progress: level === 4 && !!debugMail,
+    },
+    `verify(user=${username || "?"}, password=…, mfa=${mfaCode || "(なし)"}, reset=${sessionId || "(なし)"})`,
+    {
+      recap: taken
+        ? level === 4
+          ? ["Lv2 のパスワードで MFA を要求させた", "401 のデバッグメールにコードが出た", "そのコードでログインした"]
+          : ["認証の抜けを突いた", "admin セッションが発行された"]
+        : undefined,
+      loot: debugMail ? [{ id: "auth-mfa", label: "MFA コード", value: DEBUG_MFA }] : undefined,
+    },
+  );
 }
 
 const levels: Record<Level, LevelSpec> = {
@@ -71,26 +93,28 @@ if (!user) return "ユーザーが存在しません";
 if (!valid) return "パスワードが違います";`,
   },
   3: {
-    defense: "エラーを統一しパスワードを強化したが、ログイン時にセッション ID を更新しない。",
+    defense: "パスワードを強化しエラーを統一した。リセットトークンは `reset-` + ユーザー名。",
     hints: [
-      "パスワード以外に、ログイン状態を表す値を観察します。",
-      "攻撃者が事前に決めたセッション ID がログイン後も同じならどうなりますか？",
-      "`sessionId=fixed-admin-session` を送ってセッション固定を再現します。",
+      "よくあるパスワードでは入れません。ソースの『パスワードを忘れた場合』を読みましょう。",
+      "トークンはメール本文ではなく、ユーザー名から決まっていませんか？",
+      "username を `admin`、session ID（リセットトークン）を `reset-admin` にします。",
     ],
-    solution: "セッション ID を `fixed-admin-session` に固定します。ログイン後の ID 再発行漏れにより奪取できます。",
-    code: `const session = sessions.get(req.cookie.session) ?? createSession();
-session.userId = user.id; // ID を rotate していない`,
+    solution: "`admin` とリセットトークン `reset-admin` を送ります。トークンがユーザー名から予測できます。",
+    code: `const token = "reset-" + user.username; // 予測可能
+if (body.resetToken === token) login(user);`,
   },
   4: {
-    defense: "ログインには MFA を要求するが、アカウント回復フローが MFA を迂回する。",
+    defense: "MFA を必須にする。ただしパスワード成功時の 401 応答にデバッグ用メールプレビューを残している。",
     hints: [
-      "強い認証も、別のログイン経路が弱ければ意味がありません。",
-      "MFA コード欄は回復用の特別な値を受け付けています。",
-      "`admin` / `correct-horse-battery` と MFA に `recovery` を送ります。",
+      "リセットトークンは無効です。Lv2 で効いたパスワードはまだ使えます。",
+      "パスワードが正しいときのエラー応答をよく見てください。",
+      "デバッグヘッダ `X-Debug-Mail` に出た 6 桁を MFA コードへ入れます。",
     ],
-    solution: "MFA コードに `recovery` を指定し、回復フローから MFA を迂回します。",
-    code: `if (passwordOk && (totpOk || body.mfa === "recovery")) login();
-// 回復処理で本人確認をしていない`,
+    solution: `Lv2 のパスワード \`${ADMIN_PASSWORD_LV2}\` で MFA を要求させ、応答のコード \`${DEBUG_MFA}\` を送ります。`,
+    code: `if (passwordOk && !totpOk) {
+  res.set("X-Debug-Mail", "Your MFA code is " + user.debugOtp); // 本番に残っている
+  return 401;
+}`,
   },
   5: {
     defense: "レート制限・安全なパスワード保存・セッション再発行・MFA・回復時の再認証を組み合わせる。",
@@ -113,7 +137,7 @@ export const authLab: Lab = {
     shortTitle: "認証 / Session",
     category: "認証",
     objective: "認証やセッション管理の不備を突き、admin のログイン状態を取得する。",
-    summary: "弱いパスワード、ユーザー列挙、セッション固定、MFA 回復フローを検証する。",
+    summary: "弱いパスワード、ユーザー列挙、予測可能なリセット、MFA コードのデバッグ漏洩を検証する。",
     standards: {
       owasp: {
         code: "A07:2021",
@@ -122,6 +146,7 @@ export const authLab: Lab = {
       },
       cwe: [
         { id: 307, name: "Improper Restriction of Excessive Authentication Attempts" },
+        { id: 209, name: "Generation of Error Message Containing Sensitive Information" },
         { id: 384, name: "Session Fixation" },
       ],
     },
@@ -133,18 +158,18 @@ export const authLab: Lab = {
   fields: [
     { name: "username", label: "ユーザー名", default: "guest", mono: true },
     { name: "password", label: "パスワード", default: "guest", mono: true },
-    { name: "sessionId", label: "session ID", default: "", mono: true },
+    { name: "sessionId", label: "reset token", default: "", mono: true },
     { name: "mfaCode", label: "MFA コード", default: "", mono: true },
   ],
-  explanation: `認証の安全性はパスワード照合だけでは決まりません。試行回数制限、ユーザー列挙を防ぐ統一エラー、強いパスワード保存、ログイン時のセッション ID 再発行、MFA、アカウント回復までが攻撃対象です。
+  explanation: `認証の安全性はパスワード照合だけでは決まりません。試行回数制限、ユーザー列挙を防ぐ統一エラー、強いパスワード保存、予測不可能なリセットトークン、MFA、そしてエラー応答に秘密を出さないことが攻撃対象です。
 
-レート制限は IP だけでなくアカウントも軸にし、段階的な遅延や監視を組み合わせます。セッション ID はログイン・権限変更時に必ず再発行し、Cookie に HttpOnly・Secure・SameSite を設定します。MFA の回復手続きは通常の MFA より弱い抜け道にしてはいけません。`,
+レート制限は IP だけでなくアカウントも軸にします。リセットトークンはユーザー名から作らず十分な乱数にします。MFA コードをデバッグヘッダやメールプレビューに出してはいけません。`,
   levels,
   run,
   exploits: {
     1: { username: "admin", password: "password123", sessionId: "", mfaCode: "" },
     2: { username: "admin", password: ADMIN_PASSWORD_LV2, sessionId: "", mfaCode: "" },
-    3: { username: "guest", password: "guest", sessionId: "fixed-admin-session", mfaCode: "" },
-    4: { username: "admin", password: ADMIN_PASSWORD_LV4, sessionId: "", mfaCode: "recovery" },
+    3: { username: "admin", password: "x", sessionId: "reset-admin", mfaCode: "" },
+    4: { username: "admin", password: ADMIN_PASSWORD_LV2, sessionId: "", mfaCode: DEBUG_MFA },
   },
 };

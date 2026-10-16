@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { decodeJwtPart, makeJwt } from "../labs/jwt";
+import { decodeJwtPart, makeJwt, signHs256 } from "../labs/jwt";
 import type { AttackResult, LabInput, Level } from "../labs/types";
 import type { BrowserTab } from "./BrowserChrome";
 import { XssPreview } from "./XssPreview";
@@ -42,22 +42,46 @@ const sqli: LabUI = {
     "Host: securebank.example",
     "Content-Type: application/x-www-form-urlencoded",
     "",
-    `username=${i.username ?? ""}&password=${i.password ?? ""}`,
+    `username=${i.username ?? ""}&password=${i.password ?? ""}${i.id ? `&id=${i.id}` : ""}${i.role ? `&role=${i.role}` : ""}`,
   ],
   renderApp: ({ inputs, setField, submit, result, succeeded }) => {
     if (succeeded) {
+      const dumped = result?.loot?.some((item) => item.id.startsWith("sqli-pass-"));
       return (
         <div className="app-screen">
-          <div className="app-badge ok">管理者としてログイン中</div>
-          <h2 className="app-h">管理ダッシュボード</h2>
-          <p className="app-p">ようこそ、admin さん。全ユーザーの口座を操作できます。</p>
-          <table className="app-table">
-            <tbody>
-              <tr><td>総残高</td><td className="mono">{money(84213900)}</td></tr>
-              <tr><td>登録ユーザー</td><td className="mono">3</td></tr>
-              <tr><td>権限</td><td className="mono">administrator</td></tr>
-            </tbody>
-          </table>
+          <div className="app-badge ok">{dumped ? "users テーブルを取得" : "管理者としてログイン中"}</div>
+          <h2 className="app-h">{dumped ? "奪った認証情報" : "管理ダッシュボード"}</h2>
+          {dumped ? (
+            <table className="app-table app-users">
+              <thead>
+                <tr>
+                  <th>user</th>
+                  <th>password</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(result?.loot ?? [])
+                  .filter((item) => item.id.startsWith("sqli-pass-"))
+                  .map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.label.replace(" のパスワード", "")}</td>
+                      <td>{item.value}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          ) : (
+            <>
+              <p className="app-p">ようこそ、admin さん。全ユーザーの口座を操作できます。</p>
+              <table className="app-table">
+                <tbody>
+                  <tr><td>総残高</td><td className="mono">{money(84213900)}</td></tr>
+                  <tr><td>登録ユーザー</td><td className="mono">3</td></tr>
+                  <tr><td>権限</td><td className="mono">administrator</td></tr>
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       );
     }
@@ -185,6 +209,9 @@ const cmdi: LabUI = {
         <button type="submit" className="app-btn">Ping 実行</button>
       </form>
       {result && <pre className="app-term">{result.output.join("\n")}</pre>}
+      {result?.loot?.some((item) => item.id === "cmdi-flag") && (
+        <div className="app-alert warn">入手した flag: {result.loot.find((item) => item.id === "cmdi-flag")?.value}</div>
+      )}
     </div>
   ),
 };
@@ -233,7 +260,7 @@ const path: LabUI = {
       </form>
       {result && (
         <div className={`app-doc ${succeeded ? "leaked" : ""}`}>
-          <div className="app-doc-head mono">{inputs.name}</div>
+          <div className="app-doc-head mono">{inputs.name || result.assembled}</div>
           <pre>{result.output[result.output.length - 1]}</pre>
         </div>
       )}
@@ -309,20 +336,46 @@ const csrf: LabUI = {
   renderApp: (ctx) => <CsrfApp {...ctx} />,
 };
 
-const idor: LabUI = {
-  url: "https://shop.example/orders/1001",
-  site: "HackLab Store — 注文履歴",
-  request: (i) => [
-    `GET ${(i.endpoint ?? "/api/orders")}${(i.endpoint ?? "").includes(i.orderId ?? "___") ? "" : `/${i.orderId ?? ""}`}?owner=${i.owner ?? ""} HTTP/1.1`,
-    "Host: shop.example",
-    "Cookie: session=alice-session",
-    `X-User-Role: ${i.role ?? "user"}`,
-  ],
-  renderApp: ({ submit, result, succeeded }) => (
+function IdorApp({ submit, result, succeeded, browserTab, inputs, setField }: AppCtx) {
+  if (browserTab === "gql") {
+    return (
+      <div className="app-screen">
+        <div className="app-brand">shop.example /graphql</div>
+        <h2 className="app-h">GraphQL (dev)</h2>
+        <p className="app-p">開発用です。REST の認可ミドルウェアは通りません。</p>
+        <label className="app-field">
+          query
+          <textarea
+            className="mono"
+            rows={6}
+            aria-label="GraphQL query"
+            value={inputs.query ?? ""}
+            onChange={(e) => setField("query", e.target.value)}
+            placeholder="{ order(id: &quot;…&quot;) { id item price } }"
+            spellCheck={false}
+          />
+        </label>
+        <button
+          type="button"
+          className="app-btn"
+          onClick={() => submit({ endpoint: "/graphql", query: inputs.query ?? "" })}
+        >
+          実行
+        </button>
+        {result && (
+          <div className={`app-doc ${succeeded ? "leaked" : ""}`}>
+            <div className="app-doc-head mono">GraphQL 応答</div>
+            <pre>{result.output.join("\n")}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
     <div className="app-screen">
       <div className="app-badge ok">alice としてログイン中</div>
       <h2 className="app-h">注文履歴</h2>
-      <p className="app-p">自分の注文だけが表示されます。owner や role の改ざんは Proxy で行います。</p>
+      <p className="app-p">自分の注文だけが表示されます。</p>
       <table className="app-table">
         <thead>
           <tr>
@@ -352,7 +405,22 @@ const idor: LabUI = {
         </div>
       )}
     </div>
-  ),
+  );
+}
+
+const idor: LabUI = {
+  url: "https://shop.example/orders/1001",
+  site: "HackLab Store — 注文履歴",
+  browserTabs: [
+    { id: "shop", url: "https://shop.example/orders/1001", title: "HackLab Store" },
+    { id: "gql", url: "https://shop.example/graphql", title: "GraphQL (dev)" },
+  ],
+  request: (i) => [
+    `${(i.endpoint ?? "/api/orders").includes("graphql") ? "POST" : "GET"} ${(i.endpoint ?? "/api/orders")}${(i.endpoint ?? "").includes(i.orderId ?? "___") ? "" : `/${i.orderId ?? ""}`} HTTP/1.1`,
+    "Host: shop.example",
+    "Cookie: session=alice-session",
+  ],
+  renderApp: (ctx) => <IdorApp {...ctx} />,
 };
 
 function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx) {
@@ -363,7 +431,31 @@ function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx)
       <div className="app-brand">CorpID</div>
       <h2 className="app-h">{succeeded ? "管理コンソール" : "アカウントにログイン"}</h2>
       {succeeded ? (
-        <div className="app-badge ok">admin としてログイン中</div>
+        <>
+          <div className="app-badge ok">admin としてログイン中</div>
+          <table className="app-table app-users">
+            <thead>
+              <tr>
+                <th>ユーザー</th>
+                <th>ロール</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>admin</td>
+                <td>administrator</td>
+              </tr>
+              <tr>
+                <td>alice</td>
+                <td>user</td>
+              </tr>
+              <tr>
+                <td>bob</td>
+                <td>user</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
       ) : (
         <form
           className="app-form"
@@ -396,6 +488,9 @@ function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx)
           {level <= 2 && tries >= 3 && (
             <div className="app-alert-extra">この IP からの連続試行です。アカウント単位の制限はありません。</div>
           )}
+          {level >= 4 && result.output.some((line) => line.startsWith("X-Debug-Mail:")) && (
+            <div className="app-alert-extra mono">{result.output.find((line) => line.startsWith("X-Debug-Mail:"))}</div>
+          )}
         </div>
       )}
     </div>
@@ -411,7 +506,7 @@ const auth: LabUI = {
     `Cookie: session=${i.sessionId ?? ""}`,
     "Content-Type: application/x-www-form-urlencoded",
     "",
-    `username=${i.username ?? ""}&password=${i.password ?? ""}&mfa=${i.mfaCode ?? ""}`,
+    `username=${i.username ?? ""}&password=${i.password ?? ""}&mfa=${i.mfaCode ?? ""}&reset=${i.sessionId ?? ""}`,
   ],
   renderApp: (ctx) => <AuthApp {...ctx} />,
 };
@@ -426,6 +521,7 @@ function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
   const [headerText, setHeaderText] = useState("");
   const [payloadText, setPayloadText] = useState("");
   const [signature, setSignature] = useState("");
+  const [hmacSecret, setHmacSecret] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -470,6 +566,17 @@ function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
         <input className="mono" aria-label="JWT signature" value={signature} onChange={(e) => setSignature(e.target.value)} autoComplete="off" />
       </label>
       <label className="app-field">
+        HMAC 秘密鍵
+        <input
+          className="mono"
+          aria-label="HMAC secret"
+          value={hmacSecret}
+          onChange={(e) => setHmacSecret(e.target.value)}
+          placeholder="HS256 で署名する鍵"
+          autoComplete="off"
+        />
+      </label>
+      <label className="app-field">
         生トークン
         <textarea
           className="mono"
@@ -488,6 +595,28 @@ function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
           type="button"
           className="app-btn"
           onClick={() => {
+            try {
+              const header = JSON.parse(headerText) as object;
+              const payload = JSON.parse(payloadText) as object;
+              if (!hmacSecret) {
+                setParseError("HMAC 秘密鍵を入力してください。");
+                return;
+              }
+              const next = signHs256(header, payload, hmacSecret);
+              setField("token", next);
+              setSignature(next.split(".")[2] ?? "");
+              setParseError(null);
+            } catch {
+              setParseError("header / payload は JSON で入力してください。");
+            }
+          }}
+        >
+          HS256 で署名
+        </button>
+        <button
+          type="button"
+          className="app-btn"
+          onClick={() => {
             const next = assemble();
             if (next) submit({ token: next });
           }}
@@ -497,6 +626,30 @@ function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
       </div>
       {parseError && <div className="app-alert">{parseError}</div>}
       {result && <pre className={`app-term ${succeeded ? "leaked" : ""}`}>{result.output.join("\n")}</pre>}
+      {succeeded && (
+        <table className="app-table app-users">
+          <thead>
+            <tr>
+              <th>sub</th>
+              <th>role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>alice</td>
+              <td>user</td>
+            </tr>
+            <tr>
+              <td>bob</td>
+              <td>user</td>
+            </tr>
+            <tr>
+              <td>attacker</td>
+              <td>admin</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -532,13 +685,50 @@ const ssrf: LabUI = {
       </form>
       {result && (
         <div className={`app-doc ${succeeded ? "leaked" : ""}`}>
-          <div className="app-doc-head">{succeeded ? "内部レスポンス" : "取得結果"}</div>
-          <pre>{result.output.join("\n")}</pre>
+          <div className="app-doc-head">{succeeded ? "内部メタデータ" : "取得結果"}</div>
+          <pre>
+            {succeeded
+              ? "{\n  \"instance-role\": \"hacklab-prod\",\n  \"access-key\": \"SIMULATED_SECRET\"\n}"
+              : result.output.join("\n")}
+          </pre>
         </div>
       )}
     </div>
   ),
 };
+
+function UploadShell() {
+  const [log, setLog] = useState("uid=33(www-data) gid=33(www-data)\n");
+  const [cmd, setCmd] = useState("");
+  return (
+    <div className="app-shell">
+      <pre className="app-shell-out mono">{log || " "}</pre>
+      <form
+        className="app-form row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const line = cmd.trim() || "id";
+          let out = `sh: ${line}: not found`;
+          if (line === "id" || line === "whoami") out = "uid=33(www-data) gid=33(www-data)";
+          if (line === "ls") out = "index.php  shell.phtml  flag.txt";
+          if (line.startsWith("cat")) out = "FLAG{upl0ad_w3bshell}";
+          setLog((prev) => `${prev}$ ${line}\n${out}\n`);
+          setCmd("");
+        }}
+      >
+        <input
+          className="mono"
+          aria-label="shell command"
+          value={cmd}
+          onChange={(e) => setCmd(e.target.value)}
+          placeholder="id"
+          autoComplete="off"
+        />
+        <button type="submit" className="app-btn">実行</button>
+      </form>
+    </div>
+  );
+}
 
 const upload: LabUI = {
   url: "https://profile.example/settings/avatar",
@@ -574,9 +764,10 @@ const upload: LabUI = {
       </form>
       {result && (
         <div className={`app-alert ${succeeded ? "warn" : ""}`}>
-          {succeeded ? "危険なファイルが実行されました。" : "安全に処理されました。"}
+          {succeeded ? "危険なファイルが実行されました。シェルが開いています。" : "安全に処理されました。"}
         </div>
       )}
+      {succeeded && <UploadShell />}
     </div>
   ),
 };

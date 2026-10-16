@@ -7,6 +7,7 @@ export const STATUS = {
   failure: "失敗",
   blocked: "防御済み",
   benign: "通常応答",
+  progress: "進展あり",
 } as const;
 
 export type Pane = "target" | "proxy" | "inspector";

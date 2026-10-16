@@ -1,4 +1,5 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 /**
  * Simulated Path Traversal lab (a "view file" endpoint).
@@ -13,7 +14,8 @@ const BASE = "/var/www/files";
 const FLAG = "FLAG{p4th_tr4v3rs4l}";
 
 const FS: Record<string, string> = {
-  "/var/www/files/readme.txt": "ようこそ。ここは公開ファイル置き場です。",
+  "/var/www/files/readme.txt":
+    "ようこそ。ここは公開ファイル置き場です。\n機密バックアップは /var/www/secret/flag.txt にあります（このフォルダの外です）。",
   "/var/www/files/notice.txt": "メンテナンスは毎週日曜に実施します。",
   "/var/www/secret/flag.txt": FLAG,
   "/etc/passwd":
@@ -21,15 +23,7 @@ const FS: Record<string, string> = {
 };
 
 const TARGET = "/etc/passwd";
-
-function stripRecursive(s: string, re: RegExp): string {
-  let prev: string;
-  do {
-    prev = s;
-    s = s.replace(re, "");
-  } while (s !== prev);
-  return s;
-}
+const SECRET = "/var/www/secret/flag.txt";
 
 /** Decode %XX escapes exactly once, leaving malformed sequences untouched. */
 function decodeOnce(s: string): string {
@@ -53,13 +47,50 @@ function normalize(path: string): string {
   return (isAbs ? "/" : "") + stack.join("/");
 }
 
-/** Filter the raw (still URL-encoded) name according to the level. */
-function filterName(level: Level, s: string): string {
-  if (level === 1) return s;
-  if (level === 2) return s.replace(/\.\.\//g, ""); // single pass, forward slash
-  if (level === 3) return stripRecursive(s, /\.\.\//g); // recursive, forward slash
-  if (level === 4) return stripRecursive(s, /\.\.[\\/]/g); // recursive, both slashes
-  return s; // level 5 canonicalizes + checks containment (see run)
+/**
+ * Node-style join: an absolute second argument discards the base.
+ * `path.join("/var/www/files", "/etc/passwd")` → `/etc/passwd`.
+ */
+function pathJoin(base: string, name: string): string {
+  const trimmed = name.replace(/\\/g, "/");
+  if (trimmed.startsWith("/")) return normalize(trimmed);
+  return normalize(`${base}/${trimmed}`);
+}
+
+function truncateNull(s: string): string {
+  const i = s.indexOf("\0");
+  return i === -1 ? s : s.slice(0, i);
+}
+
+function readResult(raw: string, resolved: string, extra: string[] | undefined, target: string): AttackResult {
+  const assembled = [...(extra ?? []), `readFile(${resolved})`].join("\n");
+  const output = [`requested : ${raw}`, ...(extra ?? []), `resolved  : ${resolved}`, ""];
+  const content = FS[resolved];
+  if (content === undefined) {
+    output.push(`404: ${resolved} not found`);
+    return traced({ solved: false, output, note: "そのパスにファイルはありません。" }, assembled);
+  }
+  output.push(content);
+  const loot =
+    resolved === SECRET ? [{ id: "path-flag", label: "flag.txt", value: FLAG }] : undefined;
+  const solved = resolved === target;
+  const progress =
+    !solved && (resolved === `${BASE}/readme.txt` || (resolved === TARGET && target === SECRET));
+  const note = solved
+    ? `ベースディレクトリを脱出し、${target} を読み出しました。`
+    : resolved === "/etc/passwd" && target !== TARGET
+      ? "passwd は読めました。readme が指していた秘密ファイルはまだです。"
+      : "ファイルは読めましたが、目標ではありません。";
+  return traced(
+    { solved, output, note, progress },
+    assembled,
+    solved
+      ? {
+          recap: ["公開フォルダの外を指すパスになった", `path.join / 正規化の結果が ${resolved}`, "秘密ファイルの中身が返った"],
+          loot,
+        }
+      : { loot },
+  );
 }
 
 function run(level: Level, input: LabInput): AttackResult {
@@ -89,31 +120,42 @@ function run(level: Level, input: LabInput): AttackResult {
     };
   }
 
-  const filtered = filterName(level, raw);
-  const decoded = decodeOnce(filtered);
-  const resolved = normalize(`${BASE}/${decoded}`);
-
-  output.push(`requested : ${raw}`);
-  if (filtered !== raw) output.push(`filtered  : ${filtered}`);
-  if (decoded !== filtered) output.push(`decoded   : ${decoded}`);
-  output.push(`resolved  : ${resolved}`);
-  output.push("");
-
-  const content = FS[resolved];
-  if (content === undefined) {
-    output.push(`404: ${resolved} not found`);
-    return { solved: false, output, note: "そのパスにファイルはありません。" };
+  if (level === 4) {
+    const decoded = decodeOnce(raw);
+    if (decoded.includes("..")) {
+      return traced(
+        {
+          solved: false,
+          output: [`requested : ${raw}`, "DENY: path contains '..'"],
+          note: "`..` を含むパスは拒否されました。readme.txt が指す場所を、絶対パスで開けますか？",
+        },
+        `reject: ${raw} contains ..`,
+      );
+    }
+    const resolved = pathJoin(BASE, decoded);
+    return readResult(raw, resolved, [`joined    : path.join("${BASE}", ${JSON.stringify(decoded)})`], SECRET);
   }
 
-  output.push(content);
-  const solved = resolved === TARGET;
-  return {
-    solved,
-    output,
-    note: solved
-      ? "ベースディレクトリを脱出し、/etc/passwd の読み出しに成功しました。"
-      : "ファイルは読めましたが、目標 (/etc/passwd) ではありません。",
-  };
+  if (level === 3) {
+    if (!/\.txt$/i.test(raw)) {
+      return {
+        solved: false,
+        output: [`requested : ${raw}`, "DENY: only .txt is allowed"],
+        note: "拡張子の許可リストに一致しません。検査はどの文字列に対して行われていますか？",
+      };
+    }
+    const decoded = truncateNull(decodeOnce(raw));
+    const resolved = normalize(`${BASE}/${decoded}`);
+    return readResult(raw, resolved, decoded !== raw ? [`decoded   : ${decoded}`] : undefined, TARGET);
+  }
+
+  const filtered = level === 2 ? raw.replace(/\.\.\//g, "") : raw;
+  const decoded = decodeOnce(filtered);
+  const resolved = normalize(`${BASE}/${decoded}`);
+  const extra: string[] = [];
+  if (filtered !== raw) extra.push(`filtered  : ${filtered}`);
+  if (decoded !== filtered) extra.push(`decoded   : ${decoded}`);
+  return readResult(raw, resolved, extra, TARGET);
 }
 
 const levels: Record<Level, LevelSpec> = {
@@ -142,30 +184,30 @@ res.send(fs.readFileSync(path));`,
 const path = BASE + "/" + name;`,
   },
   3: {
-    defense: "`../` を繰り返し除去する（冪等）。",
+    defense: "拡張子 `.txt` だけを許可する。検査はデコード・ヌルバイト切断の前。",
     hints: [
-      "Lv2 の手口は通りません。ソースを読み、フィルタが対象にしている区切り文字を確認しましょう。",
-      "前方スラッシュの `../` は完全に消えます。でもパスの区切りは `/` だけでしょうか？",
-      "Windows 形式の区切り文字、バックスラッシュを使った `..\\` を試しましょう。",
+      "Lv2 の `../` 細工は、末尾が `.txt` でないと拒否されます。許可リストに切り替わっています。",
+      "検査に通ったあと、パスはデコードされます。検査用の拡張子と、実際に開く名前を分けられませんか？",
+      "ファイル名を途中で切る制御文字（ヌルバイト `%00`）を、`.txt` の直前に置けますか？",
     ],
     solution:
-      "name に `..\\..\\..\\etc\\passwd` を入力。バックスラッシュ区切りはフィルタ対象外ですが、OS はこれも区切りとして解釈します。",
-    code: `const strip = s => { let p; do { p = s;
-  s = s.replace(/\\.\\.\\//g, ""); } while (s !== p); return s; };
-const path = BASE + "/" + strip(req.query.name);`,
+      "name に `../../../etc/passwd%00.txt` を入力。検査は `.txt` で通り、その後 `%00` がヌルになり `../../../etc/passwd` だけが開かれます。",
+    code: `if (!name.endsWith(".txt")) deny(); // デコード前
+const path = BASE + "/" + decodeURIComponent(name);
+// C の API は \\0 以降を無視することがある`,
   },
   4: {
-    defense: "`../` と `..\\` を繰り返し除去する。ただしフィルタは URL デコード前に走る。",
+    defense: "`..` を拒否し、残った名前を `path.join(BASE, name)` で結合する。",
     hints: [
-      "Lv3 の手口は通りません。フィルタが『どの時点の文字列』を見ているかに注目しましょう。",
-      "両方のスラッシュが消されます。でもフィルタが見ているのは『デコード前』の文字列。エンコードして隠せませんか？",
-      "`.` を `%2e`、`/` を `%2f` に置き換えましょう。デコードされるのはフィルタの後です。",
+      "`../` もヌルバイトも通りません。先に公開の `readme.txt` を開きましょう。",
+      "join は第 2 引数が絶対パスだとベースを捨てます。秘密ファイルのフルパスをそのまま渡せますか？",
+      "readme に書いてあった `/var/www/secret/flag.txt` を name に入れます。",
     ],
     solution:
-      "name に `%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd` を入力。`%2e%2e%2f` はフィルタをすり抜け、後段のデコードで `../` に戻ります。",
-    code: `let name = strip(req.query.name); // ← デコード前に除去
-name = decodeURIComponent(name);  // 除去後にデコードしてしまう
-const path = BASE + "/" + name;`,
+      "公開の readme.txt で秘密パスを知り、name に `/var/www/secret/flag.txt` を入力します。`path.join(BASE, \"/var/www/secret/flag.txt\")` は絶対パス側だけ残します。",
+    code: `if (name.includes("..")) deny();
+const path = path.join(BASE, name);
+res.send(fs.readFileSync(path));`,
   },
   5: {
     defense: "デコード後に正規化し、最終パスがベース配下か検証する。",
@@ -215,17 +257,17 @@ export const pathTraversalLab: Lab = {
   ],
   explanation: `パストラバーサル（ディレクトリトラバーサル）は、ファイル名やパスをユーザーが指定でき、アプリがそれを検証せずにファイルパスへ連結するときに起こります。\`../\` を使って基準ディレクトリより上の階層へ遡り、本来アクセスできない設定ファイルや認証情報（例: /etc/passwd、秘密鍵、ソースコード）を読み出せてしまいます。
 
-このラボは公開フォルダ \`${BASE}\` を基準にファイルを返します。\`../\` やその亜種を使って基準を脱出し、\`/etc/passwd\` を読み出せればクリアです。
+このラボは公開フォルダ \`${BASE}\` を基準にファイルを返します。基準を脱出し、\`/etc/passwd\` を読み出せればクリアです。
 
-レベルが上がると「\`../\` を消す」といった対策が入りますが、非冪等な除去（\`....//\`）、別の区切り文字（\`..\\\`）、URL エンコード（\`%2e%2e%2f\`）などで次々と回避されます。文字列の除去（ブラックリスト）はパス解釈の多様さに追いつけません。
+レベルが上がると、部分文字列の除去、拡張子の許可リスト、\`path.join\` と対策の種類が変わります。許可リストはデコード前だとヌルバイトで切れ、join は絶対パスでベースを捨てます。Lv4 では公開 readme が秘密パスを漏らします。禁止文字列を増やすことでは止まりません。
 
-根本対策は Lv5 です。入力をデコード・正規化して「解決後の絶対パス」を求め、それが許可されたベースディレクトリ配下にあるかを検証します。パスの意味を OS と同じ基準で確定させてから判定するのが正解です。`,
+根本対策は Lv5 です。入力をデコード・正規化して「解決後の絶対パス」を求め、それが許可されたベースディレクトリ配下にあるかを検証します。`,
   levels,
   run,
   exploits: {
     1: { name: "../../../etc/passwd" },
     2: { name: "....//....//....//etc/passwd" },
-    3: { name: "..\\..\\..\\etc\\passwd" },
-    4: { name: "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" },
+    3: { name: "../../../etc/passwd%00.txt" },
+    4: { name: "/var/www/secret/flag.txt" },
   },
 };

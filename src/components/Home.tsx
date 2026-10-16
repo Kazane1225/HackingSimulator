@@ -138,7 +138,7 @@ export function Home({ progress, onReset }: Props) {
             <span className="pane-title">進め方</span>
           </div>
           <ol className="steps">
-            <li>上の推奨順でラボを選ぶ。Lv1〜4 は少しずつ強化される不完全な防御です。</li>
+            <li>上の推奨順でラボを選ぶ。Lv1〜4 は種類の違う不完全な防御です。禁止リストを厚くするだけではありません。</li>
             <li>標的アプリは普段の利用者として操作し、owner や role などの改ざんは Proxy で行います。</li>
             <li>「ソース」タブでサーバー側の処理を読み、防御の穴を探す。詰まったら「ヒント」を 1 段ずつ開く。</li>
             <li>
@@ -155,7 +155,7 @@ export function Home({ progress, onReset }: Props) {
             <dt>Lv1</dt>
             <dd>防御なし</dd>
             <dt>Lv2〜4</dt>
-            <dd>不完全な防御。前のレベルの手口は通用しません</dd>
+            <dd>種類の違う不完全な防御。前のレベルの手口は通用しません</dd>
             <dt>Lv5</dt>
             <dd>正しい実装（突破不可）。なぜ安全かを学ぶレベルです</dd>
             <dt>ヒント</dt>
