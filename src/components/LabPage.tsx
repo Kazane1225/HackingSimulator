@@ -145,7 +145,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
         <span>{spec.defense}</span>
       </div>
 
-      <div className="mobile-tabs" role="tablist" aria-label="表示ペイン">
+      <div className="mobile-tabs" role="tablist" aria-label="表示ペイン" data-testid="mobile-tabs">
         {MOBILE_TABS.map((t) => (
           <button
             key={t.key}
@@ -161,13 +161,13 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
       </div>
 
       <div className={`workbench show-${mobileTab}`}>
-        <section className="wb-target">
+        <section className="wb-target" data-testid="pane-target">
           <BrowserChrome url={ui.url} title={ui.site} onReload={clear}>
             {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire })}
           </BrowserChrome>
         </section>
 
-        <section className="pane wb-proxy">
+        <section className="pane wb-proxy" data-testid="pane-proxy">
           <div className="pane-head">
             <span className="pane-title">Proxy</span>
             <label className="toggle" title="ON のとき、標的アプリからの送信をここで止めて改ざんできます">
@@ -178,7 +178,11 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
           </div>
 
           <div className={`proxy-req ${held ? "is-held" : ""}`}>
-            {held && <div className="held-bar">リクエストを傍受しました。値を改ざんして Forward してください。</div>}
+            {held && (
+              <div className="held-bar" data-testid="held-bar">
+                リクエストを傍受しました。値を改ざんして Forward してください。
+              </div>
+            )}
             <pre className="raw mono">{ui.request(inputs).join("\n")}</pre>
             <div className="params">
               <div className="params-head">
@@ -244,7 +248,9 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
           <div className="proxy-res">
             <div className="res-head">
               <span className="pane-title">Response</span>
-              <span className={`status-badge ${status.cls}`}>{status.label}</span>
+              <span className={`status-badge ${status.cls}`} data-testid="status-badge">
+                {status.label}
+              </span>
             </div>
             {!result ? (
               <div className="empty">Forward するとサーバーの応答がここに表示されます。</div>
@@ -263,7 +269,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
           </div>
         </section>
 
-        <section className="pane wb-inspector">
+        <section className="pane wb-inspector" data-testid="pane-inspector">
           <div className="pane-head">
             <div className="pane-tabs" role="tablist">
               {inspectorTabs.map((t) => (
@@ -285,7 +291,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
             {inspector === "hint" && (
               <>
                 {spec.hints.slice(0, shownHints).map((h, i) => (
-                  <div key={i} className="hint-item">
+                  <div key={i} className="hint-item" data-testid="hint-item">
                     <div className="hint-label mono">
                       ヒント {i + 1}/{spec.hints.length}
                     </div>
@@ -315,7 +321,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
               (solutionUnlocked ? (
                 <RichText text={spec.solution} />
               ) : (
-                <div className="locked">
+                <div className="locked" data-testid="solution-locked">
                   <Lock width={22} height={22} />
                   <p>このレベルをクリアすると表示されます。</p>
                   <p className="dim">

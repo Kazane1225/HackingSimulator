@@ -84,6 +84,27 @@ npm run build      # dist/ に本番ビルド
 - Lv5 がどの解法でも突破できない
 - 普通の入力ではクリア扱いにならない
 
+### E2E テスト
+
+画面を通した動作は Playwright で確認します（Chromium。デスクトップとスマホ幅の 2 プロジェクト）。
+
+```bash
+npx playwright install chromium   # 初回のみ
+npm run test:e2e                  # ビルド → preview 起動 → 実行
+npm run typecheck:e2e             # e2e の型チェック
+```
+
+確認内容: XSS が sandbox 内で実際に発火したときだけクリアになること／進捗の保存と壊れたデータからの復旧／Intercept → 改ざん → Forward の流れ／ヒントの段階表示と解答のロック／スマホ幅でのペイン切替と横はみ出しがないこと。CI では PR ごとに実行されます。
+
+```
+e2e/
+├── specs/       # テスト本体（*.mobile.spec.ts はスマホ幅で実行）
+├── pages/       # Page Object（LabPage, Sidebar, apps/ に標的アプリごとの操作）
+├── data/        # 期待値・テストデータ（ラベル、ペイロード、ヒント数、ルートなど）
+├── fixtures/    # Page Object を差し込んだ test 拡張
+└── support/     # localStorage 操作などの補助
+```
+
 ## プロジェクト構成
 
 ```
@@ -100,10 +121,12 @@ npm run build      # dist/ に本番ビルド
 │   ├── progress.ts        # クリア状況の保存
 │   └── App.tsx
 ├── scripts/test-labs.ts   # レベル設計の検証
+├── e2e/                   # Playwright の E2E テスト
+├── playwright.config.ts
 ├── Dockerfile             # Node でビルド → nginx で配信
 ├── docker-compose.yml
 ├── nginx.conf
-└── .github/workflows/deploy.yml
+└── .github/workflows/     # ci.yml（PR）, deploy.yml（main）
 ```
 
 ### XSS ラボの安全性について

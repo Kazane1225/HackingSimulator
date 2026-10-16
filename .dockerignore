@@ -4,3 +4,6 @@ dist
 .github
 *.md
 .vscode
+e2e
+test-results
+playwright-report
