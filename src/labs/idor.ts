@@ -1,0 +1,144 @@
+import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+
+const BOB_ORDER = "ORD-B0B-42";
+
+function run(level: Level, input: LabInput): AttackResult {
+  const orderId = (input.orderId ?? "").trim();
+  const owner = (input.owner ?? "alice").trim();
+  const role = (input.role ?? "user").trim().toLowerCase();
+  const endpoint = (input.endpoint ?? "/api/orders").trim();
+  let leaked = false;
+  let reason = "";
+
+  if (level === 1) {
+    leaked = orderId === "1002";
+    reason = leaked ? "連番 ID だけで注文を取得しました。" : "注文が見つかりません。";
+  } else if (level === 2) {
+    leaked = orderId === BOB_ORDER && owner === "bob";
+    reason = leaked
+      ? "owner パラメータを信用して Bob の注文を取得しました。"
+      : "不正な注文 ID、または所有者です。";
+  } else if (level === 3) {
+    leaked = orderId === BOB_ORDER && role === "admin";
+    reason = leaked
+      ? "クライアント申告の role=admin を信用しました。"
+      : "管理者権限が必要です。";
+  } else if (level === 4) {
+    leaked = endpoint === `/api/v1/admin/orders/${BOB_ORDER}`;
+    reason = leaked
+      ? "旧管理 API に認可ミドルウェアがありません。"
+      : "この API では Alice 所有の注文だけ取得できます。";
+  } else {
+    reason = "認証済みユーザー alice と注文の所有者が一致しないため拒否しました。";
+  }
+
+  return {
+    solved: leaked,
+    output: [
+      `GET ${endpoint}${endpoint.includes(BOB_ORDER) ? "" : `/${orderId}`}`,
+      `認証ユーザー: alice / owner=${owner} / role=${role}`,
+      leaked
+        ? "[200 OK] Bob / ORD-B0B-42 / 法人向けセキュリティキー / ¥89,800"
+        : `[403 FORBIDDEN] ${reason}`,
+    ],
+    note: leaked ? "他人の注文情報へアクセスできました。" : reason,
+  };
+}
+
+const levels: Record<Level, LevelSpec> = {
+  1: {
+    defense: "認証のみ。注文 ID とログインユーザーの所有関係を確認しない。",
+    hints: [
+      "URL の注文番号は誰が決めていますか？",
+      "自分の注文 1001 の隣には、別ユーザーの注文がありそうです。",
+      "`orderId` を `1002` に書き換えて送信します。",
+    ],
+    solution: "Proxy で注文 ID を `1002` に変更すると、Bob の注文が表示されます。",
+    code: `const order = db.orders.find(req.params.id);
+return res.json(order); // 所有者を確認していない`,
+  },
+  2: {
+    defense: "推測しにくい注文 ID を使うが、owner パラメータを信用する。",
+    hints: [
+      "ランダムな ID は認可の代わりにはなりません。",
+      "リクエスト内の owner はサーバーが確定した値でしょうか？",
+      "`orderId=ORD-B0B-42` と `owner=bob` を送ります。",
+    ],
+    solution: "注文 ID を `ORD-B0B-42`、owner を `bob` に改ざんします。",
+    code: `const order = db.orders.find(req.params.id);
+if (order.owner !== req.query.owner) deny(); // 攻撃者が owner を指定できる`,
+  },
+  3: {
+    defense: "owner は無視するが、リクエストの role を認可に使う。",
+    hints: [
+      "権限はセッションではなく、変更可能な入力から読まれています。",
+      "一般ユーザーが管理者だと自己申告できないでしょうか？",
+      "`role=admin` と Bob の注文 ID を送ります。",
+    ],
+    solution: "`orderId=ORD-B0B-42`、`role=admin` に改ざんします。",
+    code: `if (req.body.role === "admin") return order; // クライアント値を信用
+if (order.owner !== session.user.id) deny();`,
+  },
+  4: {
+    defense: "通常 API は所有者を検証するが、旧管理 API に認可漏れがある。",
+    hints: [
+      "同じデータへ到達する別のエンドポイントはありませんか？",
+      "ソースに残った `/api/v1/admin/orders/:id` を確認します。",
+      "endpoint を `/api/v1/admin/orders/ORD-B0B-42` に変更します。",
+    ],
+    solution: "旧管理 API `/api/v1/admin/orders/ORD-B0B-42` へ直接アクセスします。",
+    code: `app.get("/api/v1/admin/orders/:id", getOrder); // requireAdmin がない
+app.get("/api/orders/:id", requireOwner, getOrder);`,
+  },
+  5: {
+    defense: "すべての経路で、サーバー側のユーザー ID と所有者を検証する。",
+    hints: [
+      "識別子の秘密性ではなく、オブジェクト単位の認可が必要です。",
+      "別経路も含め共通の認可ミドルウェアを適用するため、突破できません。",
+    ],
+    solution: "突破不可能です。全エンドポイントがセッション由来の主体で所有権を検証します。",
+    code: `const order = await db.orders.find(req.params.id);
+if (order.ownerId !== req.user.id && !req.user.isAdmin) deny();
+return res.json(order);`,
+  },
+};
+
+export const idorLab: Lab = {
+  meta: {
+    id: "idor",
+    title: "IDOR — 注文情報の越権閲覧",
+    shortTitle: "IDOR",
+    category: "アクセス制御",
+    objective: "alice としてログインしたまま、Bob の注文情報を取得する。",
+    summary: "識別子やパラメータを書き換え、オブジェクト単位の認可不備を見つける。",
+    standards: {
+      owasp: {
+        code: "A01:2021",
+        name: "Broken Access Control",
+        url: "https://owasp.org/Top10/A01_2021-Broken_Access_Control/",
+      },
+      cwe: [{ id: 639, name: "Authorization Bypass Through User-Controlled Key" }],
+    },
+    references: [
+      { title: "OWASP IDOR Prevention Cheat Sheet", url: "https://cheatsheetseries.owasp.org/cheatsheets/Insecure_Direct_Object_Reference_Prevention_Cheat_Sheet.html" },
+      { title: "PortSwigger — Access control vulnerabilities and privilege escalation", url: "https://portswigger.net/web-security/access-control" },
+    ],
+  },
+  fields: [
+    { name: "endpoint", label: "API エンドポイント", default: "/api/orders", mono: true },
+    { name: "orderId", label: "注文 ID", default: "1001", mono: true },
+    { name: "owner", label: "owner", default: "alice", mono: true },
+    { name: "role", label: "role", default: "user", mono: true },
+  ],
+  explanation: `IDOR（Insecure Direct Object Reference）は、URL や API の ID を変更した利用者に対し、サーバーが対象データへの権限を確認しない脆弱性です。連番を UUID に変えても、ID が漏れた場合の越権アクセスは防げません。
+
+認可判断には、リクエストで自由に変更できる owner や role ではなく、検証済みセッションのユーザー情報を使います。さらに通常画面だけでなく、旧 API・管理 API・一括処理など、同じデータへ到達するすべての経路で共通の認可を適用します。`,
+  levels,
+  run,
+  exploits: {
+    1: { endpoint: "/api/orders", orderId: "1002", owner: "alice", role: "user" },
+    2: { endpoint: "/api/orders", orderId: BOB_ORDER, owner: "bob", role: "user" },
+    3: { endpoint: "/api/orders", orderId: BOB_ORDER, owner: "alice", role: "admin" },
+    4: { endpoint: `/api/v1/admin/orders/${BOB_ORDER}`, orderId: BOB_ORDER, owner: "alice", role: "user" },
+  },
+};
