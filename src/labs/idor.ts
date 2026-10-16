@@ -1,4 +1,5 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 const BOB_ORDER = "ORD-B0B-42";
 
@@ -23,9 +24,10 @@ const BOB: Order = {
   price: "¥89,800",
 };
 
-function format(order: Order): string {
+function format(order: Order, leakRelated = false): string {
   const who = order.owner === "alice" ? "Alice" : "Bob";
-  return `[200 OK] ${who} / ${order.id} / ${order.item} / ${order.price}`;
+  const related = leakRelated ? `\nrelated_order: ${BOB_ORDER}` : "";
+  return `[200 OK] ${who} / ${order.id} / ${order.item} / ${order.price}${related}`;
 }
 
 function isAliceOrder(orderId: string, endpoint: string): boolean {
@@ -33,10 +35,13 @@ function isAliceOrder(orderId: string, endpoint: string): boolean {
 }
 
 function run(level: Level, input: LabInput): AttackResult {
+  const query = input.query ?? "";
   const orderId = (input.orderId ?? "").trim();
   const owner = (input.owner ?? "alice").trim();
   const role = (input.role ?? "user").trim().toLowerCase();
   const endpoint = (input.endpoint ?? "/api/orders").trim();
+  const blob = `${endpoint} ${orderId} ${query}`;
+  const askedBob = orderId === BOB_ORDER || blob.includes(BOB_ORDER);
 
   let shown: Order | null = null;
   let leaked = false;
@@ -63,26 +68,28 @@ function run(level: Level, input: LabInput): AttackResult {
       reason = "不正な注文 ID、または所有者です。";
     }
   } else if (level === 3) {
-    if (orderId === BOB_ORDER && role === "admin") {
+    if (/\/api\/export/i.test(endpoint) && orderId === BOB_ORDER) {
       shown = BOB;
       leaked = true;
-      reason = "クライアント申告の role=admin を信用しました。";
+      reason = "CSV エクスポート API に所有者チェックがありません。";
+    } else if (orderId === BOB_ORDER) {
+      reason = "注文 API はセッションユーザーと所有者を照合しました。";
     } else if (isAliceOrder(orderId, endpoint)) {
       shown = ALICE;
       reason = "自分の注文を表示しました。";
-    } else {
-      reason = "管理者権限が必要です。";
     }
   } else if (level === 4) {
-    if (endpoint === `/api/v1/admin/orders/${BOB_ORDER}`) {
+    if (/\/graphql/i.test(endpoint) && /__schema/i.test(query) && !askedBob) {
+      reason = "introspection で Order 型が見つかりました。";
+    } else if (/\/graphql/i.test(endpoint) && askedBob) {
       shown = BOB;
       leaked = true;
-      reason = "旧管理 API に認可ミドルウェアがありません。";
+      reason = "GraphQL の order クエリにオブジェクト単位の認可がありません。";
     } else if (isAliceOrder(orderId, endpoint)) {
       shown = ALICE;
       reason = "自分の注文を表示しました。";
     } else {
-      reason = "この API では Alice 所有の注文だけ取得できます。";
+      reason = "REST・エクスポートは所有者を確認しています。";
     }
   } else if (isAliceOrder(orderId, endpoint)) {
     shown = ALICE;
@@ -91,17 +98,45 @@ function run(level: Level, input: LabInput): AttackResult {
     reason = "認証済みユーザー alice と注文の所有者が一致しないため拒否しました。";
   }
 
-  const path = endpoint.includes(BOB_ORDER) ? endpoint : `${endpoint}/${orderId}`;
-  return {
-    solved: leaked,
-    benign: !!shown && !leaked,
-    output: [
-      `GET ${path}`,
-      `認証ユーザー: alice / owner=${owner} / role=${role}`,
-      shown ? format(shown) : `[403 FORBIDDEN] ${reason}`,
-    ],
-    note: leaked ? "他人の注文情報へアクセスできました。" : reason,
-  };
+  const path = endpoint.includes(BOB_ORDER) ? endpoint : `${endpoint}/${orderId || ""}`;
+  const leakRelated = shown === ALICE && level >= 3;
+  const introspect = /\/graphql/i.test(endpoint) && /__schema/i.test(query) && !leaked;
+  const loot = leakRelated ? [{ id: "idor-related", label: "Bob の注文 ID", value: BOB_ORDER }] : [];
+  const output = [
+    /\/graphql/i.test(endpoint) ? `POST ${endpoint}` : `GET ${path}`,
+    `認証ユーザー: alice / owner=${owner} / role=${role}`,
+    introspect
+      ? `type Query { order(id: ID!): Order }\ntype Order { id owner item price related_order }`
+      : shown
+        ? format(shown, leakRelated)
+        : `[403 FORBIDDEN] ${reason}`,
+  ];
+  return traced(
+    {
+      solved: leaked,
+      progress: !leaked && (leakRelated || introspect),
+      benign: !!shown && !leaked && !leakRelated && !introspect,
+      output,
+      note: leaked
+        ? "他人の注文情報へアクセスできました。"
+        : leakRelated
+          ? "自分の注文です。応答の関連フィールドを確認してください。"
+          : introspect
+            ? reason
+            : reason,
+    },
+    /\/graphql/i.test(endpoint)
+      ? `resolver order(${orderId || query || "…"})  // 認可なし`
+      : `GET ${path}  authorize(alice, owner=${owner})`,
+    {
+      recap: leaked
+        ? level >= 3
+          ? ["自分の注文から related_order が漏れた", `${endpoint} に所有者チェックがなかった`, "Bob の注文が返った"]
+          : ["注文 ID の所有者を確認していなかった", "他人の注文が返った"]
+        : undefined,
+      loot: loot.length ? loot : undefined,
+    },
+  );
 }
 
 const levels: Record<Level, LevelSpec> = {
@@ -128,26 +163,31 @@ return res.json(order); // 所有者を確認していない`,
 if (order.owner !== req.query.owner) deny(); // 攻撃者が owner を指定できる`,
   },
   3: {
-    defense: "owner は無視するが、リクエストの role を認可に使う。",
+    defense: "注文 GET は所有者を検証する。一括エクスポート API には認可がない。",
     hints: [
-      "権限はセッションではなく、変更可能な入力から読まれています。",
-      "一般ユーザーが管理者だと自己申告できないでしょうか？",
-      "`role=admin` と Bob の注文 ID を送ります。",
+      "owner や role の改ざんは、注文 API では効かなくなりました。連番 `1002` ももう使えません。",
+      "自分の注文 1001 を表示すると、応答に related_order が付きませんか？",
+      "endpoint を `/api/export` にし、漏れた related_order を付けます。",
     ],
-    solution: "`orderId=ORD-B0B-42`、`role=admin` に改ざんします。",
-    code: `if (req.body.role === "admin") return order; // クライアント値を信用
-if (order.owner !== session.user.id) deny();`,
+    solution:
+      "自分の注文応答の `related_order`（`ORD-B0B-42`）を `/api/export` に付けます。CSV 出力用 API が認可をスキップしています。",
+    code: `app.get("/api/orders/:id", requireOwner, getOrder);
+app.get("/api/export", (req, res) => {
+  return csv(db.orders.find(req.query.id)); // 認可なし
+});`,
   },
   4: {
-    defense: "通常 API は所有者を検証するが、旧管理 API に認可漏れがある。",
+    defense: "REST とエクスポートは所有者を検証する。GraphQL リゾルバだけ認可がない。",
     hints: [
-      "同じデータへ到達する別のエンドポイントはありませんか？",
-      "ソースに残った `/api/v1/admin/orders/:id` を確認します。",
-      "endpoint を `/api/v1/admin/orders/ORD-B0B-42` に変更します。",
+      "エクスポートも塞がれました。店の画面に『GraphQL (dev)』タブはありませんか？",
+      "`{ __schema { types { name } } }` で型を見られます。REST の認可はここを通りません。",
+      "Lv3 で見た related_order を GraphQL の order に載せます。連番 ID は通りません。",
     ],
-    solution: "旧管理 API `/api/v1/admin/orders/ORD-B0B-42` へ直接アクセスします。",
-    code: `app.get("/api/v1/admin/orders/:id", getOrder); // requireAdmin がない
-app.get("/api/orders/:id", requireOwner, getOrder);`,
+    solution: "`POST /graphql` 相当として endpoint `/graphql`、`orderId=ORD-B0B-42` を送ります。order リゾルバが所有者を見ていません。",
+    code: `app.use("/api", requireOwner);
+const resolvers = {
+  order: (_, { id }) => db.orders.find(id), // 認可なし
+};`,
   },
   5: {
     defense: "すべての経路で、サーバー側のユーザー ID と所有者を検証する。",
@@ -184,20 +224,21 @@ export const idorLab: Lab = {
     ],
   },
   fields: [
-    { name: "endpoint", label: "API エンドポイント", default: "/api/orders", mono: true },
     { name: "orderId", label: "注文 ID", default: "1001", mono: true },
-    { name: "owner", label: "owner", default: "alice", mono: true },
-    { name: "role", label: "role", default: "user", mono: true },
+    { name: "endpoint", label: "endpoint", default: "/api/orders", mono: true, hidden: true },
+    { name: "owner", label: "owner", default: "alice", mono: true, hidden: true },
+    { name: "role", label: "role", default: "user", mono: true, hidden: true },
+    { name: "query", label: "GraphQL query", default: "", multiline: true, mono: true, hidden: true },
   ],
   explanation: `IDOR（Insecure Direct Object Reference）は、URL や API の ID を変更した利用者に対し、サーバーが対象データへの権限を確認しない脆弱性です。連番を UUID に変えても、ID が漏れた場合の越権アクセスは防げません。
 
-認可判断には、リクエストで自由に変更できる owner や role ではなく、検証済みセッションのユーザー情報を使います。さらに通常画面だけでなく、旧 API・管理 API・一括処理など、同じデータへ到達するすべての経路で共通の認可を適用します。`,
+認可判断には、リクエストで自由に変更できる owner や role ではなく、検証済みセッションのユーザー情報を使います。自分の注文応答に他人の ID を混ぜるのも漏洩です。画面用 REST を直しても、エクスポートや GraphQL など同じデータへ到達する経路が残れば越権は成立します。すべての経路で共通の認可を適用します。`,
   levels,
   run,
   exploits: {
     1: { endpoint: "/api/orders", orderId: "1002", owner: "alice", role: "user" },
     2: { endpoint: "/api/orders", orderId: BOB_ORDER, owner: "bob", role: "user" },
-    3: { endpoint: "/api/orders", orderId: BOB_ORDER, owner: "alice", role: "admin" },
-    4: { endpoint: `/api/v1/admin/orders/${BOB_ORDER}`, orderId: BOB_ORDER, owner: "alice", role: "user" },
+    3: { endpoint: "/api/export", orderId: BOB_ORDER, owner: "alice", role: "user" },
+    4: { endpoint: "/graphql", orderId: BOB_ORDER, owner: "alice", role: "user" },
   },
 };

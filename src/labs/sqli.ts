@@ -1,4 +1,5 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 /**
  * Simulated SQL Injection lab (login form).
@@ -165,8 +166,6 @@ function parseWhere(tokens: Token[]): Pred | null {
   return pred;
 }
 
-// --- Per-level input filtering ---------------------------------------------
-
 function stripRecursive(s: string, re: RegExp): string {
   let prev: string;
   do {
@@ -176,82 +175,66 @@ function stripRecursive(s: string, re: RegExp): string {
   return s;
 }
 
-/** Apply the defense for `level` to a single user-supplied field. */
-function sanitize(level: Level, s: string): string {
-  const comments = /--|#|\/\*|\*\//g;
-  const wordKeywords = /\bor\b|\band\b/gi;
-  const operators = /\|\||&&/g;
-  if (level === 1) return s;
-  if (level === 2) return stripRecursive(s, comments);
-  if (level === 3) {
-    // Only the *word* keywords are blacklisted; the symbolic aliases slip by.
-    let out = stripRecursive(s, comments);
-    out = stripRecursive(out, wordKeywords);
-    return out;
-  }
-  if (level === 4) {
-    // Regression: rewritten as a single pass that also strips *substrings*
-    // (to catch things like "oOrr"), but it is no longer idempotent. Removing
-    // "or" from "oorr" leaves "or" behind — the classic blacklist bug.
-    let out = s.replace(comments, "");
-    out = out.replace(/or|and/gi, "");
-    out = out.replace(operators, "");
-    return out;
-  }
-  return s; // level 5 does not build strings at all (see run)
+/** SQL standard quote doubling — a real mitigation, not a keyword blacklist. */
+function escapeSql(s: string): string {
+  return s.replace(/'/g, "''");
 }
-
-// --- Lab runner ------------------------------------------------------------
 
 function legitPair(username: string, password: string): boolean {
   return USERS.some((u) => u.username === username && u.password === password);
 }
 
-function run(level: Level, input: LabInput): AttackResult {
-  const rawUser = input.username ?? "";
-  const rawPass = input.password ?? "";
-  const output: string[] = [];
+function finish(
+  query: string,
+  headline: string,
+  rawUser: string,
+  rawPass: string,
+  mode: "login" | "dump" = "login",
+): AttackResult {
+  const assembled = `${query};`;
+  const output: string[] = [headline, assembled, ""];
 
-  if (level === 5) {
-    // Parameterized query: inputs are bound as data, never concatenated.
-    output.push("-- 準備済みステートメント (プレースホルダ)");
-    output.push("SELECT * FROM users WHERE username = ? AND password = ?;");
-    output.push(`-- bind: ? = ${JSON.stringify(rawUser)}, ? = ${JSON.stringify(rawPass)}`);
-    const rows = USERS.filter(
-      (u) => u.username === rawUser && u.password === rawPass,
+  if (mode === "dump" && /union\s+select/i.test(query)) {
+    output.push("UNION により users テーブルを取得:");
+    for (const r of USERS) {
+      output.push(`   #${r.id}  ${r.username}  password=${r.password}  (${r.role})`);
+    }
+    return traced(
+      {
+        solved: true,
+        output,
+        note: "UNION SELECT でパスワード列を奪いました。",
+      },
+      assembled,
+      {
+        recap: [
+          "ログイン欄はプレースホルダだった",
+          "role フィルタだけ文字列連結が残っていた",
+          "UNION で users.password が応答に乗った",
+        ],
+        loot: USERS.map((u) => ({
+          id: `sqli-pass-${u.username}`,
+          label: `${u.username} のパスワード`,
+          value: u.password,
+        })),
+      },
     );
-    output.push("");
-    output.push(`→ ${rows.length} 行ヒット`);
-    const bypass = rows.length > 0 && !legitPair(rawUser, rawPass);
-    return {
-      solved: bypass, // can only be true with real credentials ⇒ never
-      output,
-      note:
-        rows.length > 0
-          ? "正規の資格情報でのログインです（インジェクションではありません）。"
-          : "入力は値として扱われたため、クエリ構造は一切変化しませんでした。",
-    };
   }
 
-  const u = sanitize(level, rawUser);
-  const p = sanitize(level, rawPass);
-  const query = `SELECT * FROM users WHERE username='${u}' AND password='${p}'`;
-  output.push("-- 文字列連結で組み立てられたクエリ");
-  output.push(`${query};`);
-  output.push("");
-
-  // Everything after WHERE:
-  const whereStr = query.slice(query.indexOf("WHERE") + 5);
+  const whereStr = query.slice(query.indexOf("WHERE") + 5).replace(/\s+union\s+[\s\S]*$/i, "");
   const pred = parseWhere(tokenize(whereStr));
 
   if (pred === null) {
     output.push("SQL ERROR: you have an error in your SQL syntax");
     output.push("→ 0 行ヒット（クエリが構文エラーで失敗）");
-    return {
-      solved: false,
-      output,
-      note: "組み立てたクエリが壊れています。構文として成立する注入を考えましょう。",
-    };
+    return traced(
+      {
+        solved: false,
+        output,
+        note: "組み立てたクエリが壊れています。構文として成立する注入を考えましょう。",
+      },
+      assembled,
+    );
   }
 
   const rows = USERS.filter(pred);
@@ -263,18 +246,89 @@ function run(level: Level, input: LabInput): AttackResult {
   const authed = rows.length > 0;
   const injected = authed && !legitPair(rawUser, rawPass);
   const loggedInAsAdmin = rows.some((r) => r.username === "admin");
+  const solved = mode === "login" && injected && loggedInAsAdmin;
 
-  return {
-    solved: injected && loggedInAsAdmin,
-    output,
-    note: !authed
-      ? "ログイン失敗。該当ユーザーなし。"
-      : injected
-        ? loggedInAsAdmin
-          ? "admin としてログイン成功。認証をバイパスしました。"
-          : "ログインはできましたが admin ではありません。admin 行を返させましょう。"
-        : "正規の資格情報です（インジェクションではありません）。",
-  };
+  return traced(
+    {
+      solved,
+      output,
+      progress:
+        (mode === "dump" && authed && !solved) || (mode === "login" && injected && !loggedInAsAdmin),
+      benign: mode === "login" && authed && !injected,
+      note:
+        mode === "dump"
+          ? authed
+            ? "ログインは通りましたが、Lv4 の目標はテーブルの中身です。"
+            : "role の条件に合う行がありません。"
+          : !authed
+            ? "ログイン失敗。該当ユーザーなし。"
+            : injected
+              ? loggedInAsAdmin
+                ? "admin としてログイン成功。認証をバイパスしました。"
+                : "ログインはできましたが admin ではありません。admin 行を返させましょう。"
+              : "正規の資格情報です（インジェクションではありません）。",
+    },
+    assembled,
+    solved
+      ? {
+          recap: ["入力が SQL の構文として解釈された", "WHERE が意図せず真になった", "admin 行が返った"],
+        }
+      : undefined,
+  );
+}
+
+function run(level: Level, input: LabInput): AttackResult {
+  const rawUser = input.username ?? "";
+  const rawPass = input.password ?? "";
+  const rawId = (input.id ?? "").trim();
+  const rawRole = input.role ?? "user";
+
+  if (level === 5) {
+    const output: string[] = [];
+    output.push("-- 準備済みステートメント (プレースホルダ)");
+    output.push("SELECT * FROM users WHERE username = ? AND password = ? AND role = ?;");
+    output.push(
+      `-- bind: username=${JSON.stringify(rawUser)}, password=${JSON.stringify(rawPass)}, role=${JSON.stringify(rawRole)}`,
+    );
+    const rows = USERS.filter(
+      (u) => u.username === rawUser && u.password === rawPass && u.role === rawRole,
+    );
+    output.push("");
+    output.push(`→ ${rows.length} 行ヒット`);
+    return traced(
+      {
+        solved: false,
+        output,
+        note:
+          rows.length > 0
+            ? "正規の資格情報でのログインです（インジェクションではありません）。"
+            : "入力は値として扱われたため、クエリ構造は一切変化しませんでした。",
+      },
+      "SELECT * FROM users WHERE username = ? AND password = ? AND role = ?;",
+    );
+  }
+
+  if (level === 4) {
+    const query =
+      `SELECT * FROM users WHERE username='${escapeSql(rawUser)}'` +
+      ` AND password='${escapeSql(rawPass)}'` +
+      ` AND role='${rawRole}'`;
+    return finish(query, "-- username / password はプレースホルダ。role だけ文字列連結", rawUser, rawPass, "dump");
+  }
+
+  if (level === 3) {
+    const u = escapeSql(rawUser);
+    const p = escapeSql(rawPass);
+    const query = rawId
+      ? `SELECT * FROM users WHERE username='${u}' AND password='${p}' AND id=${rawId}`
+      : `SELECT * FROM users WHERE username='${u}' AND password='${p}'`;
+    return finish(query, "-- 文字列はクオートを二重化して連結。id は数値として連結", rawUser, rawPass);
+  }
+
+  const u = level === 2 ? stripRecursive(rawUser, /--|#|\/\*|\*\//g) : rawUser;
+  const p = level === 2 ? stripRecursive(rawPass, /--|#|\/\*|\*\//g) : rawPass;
+  const query = `SELECT * FROM users WHERE username='${u}' AND password='${p}'`;
+  return finish(query, "-- 文字列連結で組み立てられたクエリ", rawUser, rawPass);
 }
 
 const levels: Record<Level, LevelSpec> = {
@@ -305,35 +359,35 @@ let p = password.replace(/--|#|\\/\\*|\\*\\//g, "");
 const q = "...WHERE username='" + u + "' AND password='" + p + "'";`,
   },
   3: {
-    defense: "コメントに加え、英単語の OR / AND を（大小文字無視・繰り返し）除去する。",
+    defense: "ログイン欄のクオートを SQL 方式でエスケープする。ただし隠しパラメータ id は数値として連結する。",
     hints: [
-      "Lv2 の手口は通りません。ソースを読み、除去されるのは『英単語』なのか『演算子の意味』なのかを考えましょう。",
-      "英単語の OR が消されます。OR と同じ意味を持つ『記号』は他にありませんか？",
-      "MySQL などでは `||` が論理和として働きます。",
+      "Lv2 の `' OR '1'='1` は、`'` が `''` に変換されてただの検索文字列になります。防御の種類が変わっています。",
+      "ソースを読むと、username / password 以外にもクエリへ入る値があります。数値だと思っている欄はクオートで囲まれていますか？",
+      "Proxy の `id` は `AND id=` の後ろにそのまま繋がります。OR で条件を足せませんか？",
     ],
     solution:
-      "username に `admin'||'1'='1` を入力。MySQL などでは `||` が論理和として評価され、OR と同じく常に真になります。ブラックリストが英単語しか見ていない盲点です。",
-    code: `const strip = (s) => { let p; do { p = s;
-  s = s.replace(/--|#|\\/\\*|\\*\\//g, "")
-       .replace(/\\bor\\b|\\band\\b/gi, "");  // 記号の || && は見ていない
-} while (s !== p); return s; };`,
+      "username / password はそのままで、Proxy の `id` に `1 OR 1=1` を入れます。数値列はクオートもエスケープもないため、`AND id=1 OR 1=1` が追加され admin 行を含む全行が返ります。",
+    code: `const u = username.replace(/'/g, "''"); // 教科書的なエスケープ
+const p = password.replace(/'/g, "''");
+let q = "SELECT * FROM users WHERE username='" + u + "' AND password='" + p + "'";
+if (req.body.id) q += " AND id=" + req.body.id; // 数値だから安全、と思っている`,
   },
   4: {
-    defense: "ブラックリストを単一パスの置換に書き換え（部分文字列も除去）。繰り返し適用していない。",
+    defense: "username / password はプレースホルダ。表示用フィルタ role だけ文字列連結が残っている。",
     hints: [
-      "Lv3 の手口は通りません。ソースを読み、除去が『何回』行われるかに注目しましょう。",
-      "フィルタは一度しか走りません。『除去した結果、禁止語が再生成される』ような入力を作れませんか？",
-      "`or` の途中に `or` を挟んだ文字列（`oorr`）を 1 回除去すると、何が残りますか？",
+      "ログイン欄への注入は効きません。OR で入れてもパスワードは出ません。",
+      "Interceptor で `role` パラメータを追加できます。ソースの連結箇所です。",
+      "`' UNION SELECT username, password FROM users-- ` で別の SELECT を足せます。",
     ],
     solution:
-      "username に `admin' oorr '1'='1` を入力。`oorr` から真ん中の `or` が一度だけ除去され `or` が復活 → `WHERE username='admin' or '1'='1' ...` となり認証バイパス成立。非冪等なサニタイズの典型バグです。",
-    code: `let u = username.replace(/--|#|\\/\\*|\\*\\//g, "")
-   .replace(/or|and/gi, "")   // ← 1回しか置換しない
-   .replace(/\\|\\||&&/g, "");
-// "oorr" -> "or" が残る`,
+      "Proxy に `role` を追加し、`' UNION SELECT username, password FROM users-- ` を入れます。認証をバイパスするのではなく、users 表のパスワード列を奪います。",
+    code: `db.query(
+  "SELECT * FROM users WHERE username=? AND password=? AND role='" + role + "'",
+  [username, password] // ログイン欄だけ対策済み。role は連結のまま
+);`,
   },
   5: {
-    defense: "プレースホルダ（準備済みステートメント）で入力を値としてバインド。",
+    defense: "すべての入力をプレースホルダでバインドする。",
     hints: [
       "入力は SQL 構造に影響できません。これは正しい対策です。",
       "「ソース」を読み、入力が SQL の『構文』ではなく『値』として扱われる理由を考えましょう。",
@@ -341,8 +395,8 @@ const q = "...WHERE username='" + u + "' AND password='" + p + "'";`,
     solution:
       "このレベルは意図的に突破不可能です。パラメータ化クエリでは入力が常に『値』として扱われ、クオートを閉じても構造は変わりません。これが本来あるべき実装です。",
     code: `db.query(
-  "SELECT * FROM users WHERE username = ? AND password = ?",
-  [username, password]   // 値としてバインド。構造は不変
+  "SELECT * FROM users WHERE username=? AND password=? AND role=?",
+  [username, password, role]
 );`,
   },
 };
@@ -353,8 +407,8 @@ export const sqliLab: Lab = {
     title: "SQL インジェクション — ログイン認証バイパス",
     shortTitle: "SQL インジェクション",
     category: "インジェクション",
-    objective: "正しいパスワードを知らずに admin としてログインする。",
-    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証を回避する。",
+    objective: "正しいパスワードを知らずに admin になるか、ユーザー表の認証情報を奪う。",
+    summary: "文字列連結で組み立てられたログインクエリを悪用し、認証回避や UNION によるダンプを行う。",
     standards: {
       owasp: { code: "A03:2021", name: "Injection", url: "https://owasp.org/Top10/A03_2021-Injection" },
       cwe: [{ id: 89, name: "Improper Neutralization of Special Elements used in an SQL Command (SQL Injection)" }],
@@ -371,20 +425,22 @@ export const sqliLab: Lab = {
   fields: [
     { name: "username", label: "ユーザー名", placeholder: "admin", mono: true, default: "admin" },
     { name: "password", label: "パスワード", placeholder: "password", mono: true, default: "wrong" },
+    { name: "id", label: "id", placeholder: "", mono: true, default: "", hidden: true },
+    { name: "role", label: "role", placeholder: "user", mono: true, default: "user", hidden: true },
   ],
   explanation: `SQL インジェクションは、アプリがユーザー入力を SQL 文に文字列連結で埋め込むときに起こります。入力の中のクオートやキーワードが「データ」ではなく「SQL の構文」として解釈され、攻撃者がクエリの意味そのものを書き換えられます。
 
-このラボのログイン処理は \`WHERE username='<入力>' AND password='<入力>'\` を組み立てます。クオートを閉じて \`OR '1'='1'\` のような常に真の条件を注入したり、\`-- \` で以降をコメントアウトすると、パスワード検証を素通りできます。
+このラボのログイン処理は \`WHERE username='<入力>' AND password='<入力>'\` を組み立てます。クオートを閉じてコメントアウトしたり、常に真の条件を足すと、パスワード検証を素通りできます。
 
-レベルが上がるとブラックリスト（禁止語の除去）で防ごうとしますが、ブラックリストは「記号による等価表現」「大小文字」「非冪等な置換」などで次々と回避されます。これがブラックリスト方式の本質的な弱さです。
+レベルが上がると対策の**種類**が変わります。コメント除去、クオートのエスケープ、プレースホルダです。エスケープはログイン欄を止めても、クオートで囲んでいない数値パラメータや、後から足した role フィルタのような別の連結箇所が残れば成立します。禁止語を増やすことでは止まりません。
 
-根本対策は Lv5 のプレースホルダ（準備済みステートメント）です。入力は必ず「値」としてバインドされ、クオートを含んでいてもクエリの構造は一切変わりません。入力のエスケープに頼るのではなく、構造とデータを分離するのが正解です。`,
+根本対策は Lv5 です。ユーザーが触れる値はすべてプレースホルダでバインドし、構造とデータを分離します。`,
   levels,
   run,
   exploits: {
-    1: { username: "admin'-- ", password: "x" },
-    2: { username: "admin' OR '1'='1", password: "x" },
-    3: { username: "admin'||'1'='1", password: "x" },
-    4: { username: "admin' oorr '1'='1", password: "x" },
+    1: { username: "admin'-- ", password: "x", id: "", role: "user" },
+    2: { username: "admin' OR '1'='1", password: "x", id: "", role: "user" },
+    3: { username: "admin", password: "wrong", id: "1 OR 1=1", role: "user" },
+    4: { username: "admin", password: "wrong", id: "", role: "' UNION SELECT username, password FROM users-- " },
   },
 };

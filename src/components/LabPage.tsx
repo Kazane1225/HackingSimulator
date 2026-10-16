@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useState } from "react";
-import type { AttackResult, Lab, LabInput, Level } from "../labs/types";
+import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
+import { useLoot } from "../loot";
 import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LAB_UI } from "./labUI";
@@ -23,7 +24,13 @@ interface Props {
 }
 
 function defaultInputs(lab: Lab): LabInput {
-  return Object.fromEntries(lab.fields.map((f) => [f.name, f.default ?? ""]));
+  return Object.fromEntries(lab.fields.filter((f) => !f.hidden).map((f) => [f.name, f.default ?? ""]));
+}
+
+function assembledDuplicatesOutput(assembled: string | undefined, output: string[]): boolean {
+  const a = assembled?.trim() ?? "";
+  if (!a) return true;
+  return output.join("\n").includes(a);
 }
 
 export function LabPage({ lab, isSolved, markSolved }: Props) {
@@ -41,6 +48,11 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [inspector, setInspector] = useState<InspectorTab>("hint");
   const [hintsShown, setHintsShown] = useState<Partial<Record<Level, number>>>({});
   const [mobileTab, setMobileTab] = useState<MobileTab>("target");
+  const [revealed, setRevealed] = useState<string[]>([]);
+  const [extraParams, setExtraParams] = useState<string[]>([]);
+  const [newParamName, setNewParamName] = useState("");
+  const [focusField, setFocusField] = useState<string | null>(null);
+  const { items: loot, ingest } = useLoot();
 
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
   const [browserTab, setBrowserTab] = useState(browserTabs[0].id);
@@ -52,7 +64,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
   const executionJudged = result?.renderHtml !== undefined;
   const succeeded = !!result && (executionJudged ? fired !== null : result.solved);
-  const benign = !!result && !succeeded && !!result.benign;
+  const progress = !!result && !succeeded && !!result.progress;
+  const benign = !!result && !succeeded && !!result.benign && !progress;
 
   const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
 
@@ -65,7 +78,36 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
 
   const selectLevel = (lv: Level) => {
     setLevel(lv);
+    setRevealed([]);
+    setExtraParams([]);
+    setNewParamName("");
     clear();
+  };
+
+  const knownVisible = lab.fields.filter(
+    (f) => !f.hidden || revealed.includes(f.name) || ((inputs[f.name] ?? "") !== (f.default ?? "") && (inputs[f.name] ?? "") !== ""),
+  );
+  const visibleFields: LabField[] = [
+    ...knownVisible,
+    ...extraParams
+      .filter((name) => !knownVisible.some((f) => f.name === name))
+      .map((name) => ({ name, label: name, mono: true })),
+  ];
+  const canAddParams = lab.fields.some((f) => f.hidden);
+
+  const addNamedParam = (raw: string) => {
+    const name = raw.trim();
+    if (!name) return;
+    const known = lab.fields.find((f) => f.name === name);
+    if (known?.hidden) {
+      setRevealed((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setField(name, inputs[name] ?? known.default ?? "");
+    } else if (!known) {
+      setExtraParams((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setField(name, inputs[name] ?? "");
+    }
+    setNewParamName("");
+    setFocusField(name);
   };
 
   const forward = (requestInputs: LabInput = inputs) => {
@@ -74,6 +116,13 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     setFired(null);
     setHeld(false);
     setRunId((n) => n + 1);
+    ingest(id, r.loot);
+    for (const key of Object.keys(requestInputs)) {
+      const field = lab.fields.find((f) => f.name === key && f.hidden);
+      if (field && requestInputs[key] !== (field.default ?? "")) {
+        setRevealed((prev) => (prev.includes(key) ? prev : [...prev, key]));
+      }
+    }
     // Labs that render markup are judged by real execution in the sandboxed
     // iframe (see onFire), not by the heuristic in run().
     if (r.solved && r.renderHtml === undefined) markSolved(id, level);
@@ -82,7 +131,14 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   /** The target app was used normally: hold the request if intercepting. */
   const submitFromApp = (patch?: LabInput) => {
     const requestInputs = patch ? { ...inputs, ...patch } : inputs;
-    if (patch) setInputs(requestInputs);
+    if (patch) {
+      setInputs(requestInputs);
+      for (const key of Object.keys(patch)) {
+        if (lab.fields.some((f) => f.name === key && f.hidden)) {
+          setRevealed((prev) => (prev.includes(key) ? prev : [...prev, key]));
+        }
+      }
+    }
     if (intercept) {
       setHeld(true);
       setMobileTab("proxy");
@@ -99,17 +155,21 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     [id, level, markSolved],
   );
 
+  const labLoot = loot.filter((item) => item.labId === id);
+
   const status = held
     ? { cls: "held", label: "傍受中" }
     : !result
       ? { cls: "idle", label: "待機" }
       : succeeded
         ? { cls: "ok", label: "成功" }
-        : benign
-          ? { cls: "benign", label: "通常応答" }
-          : level === 5
-            ? { cls: "blocked", label: "防御済み" }
-            : { cls: "ng", label: "失敗" };
+        : level === 5
+          ? { cls: "blocked", label: "防御済み" }
+          : progress
+            ? { cls: "progress", label: "進展あり" }
+            : benign
+              ? { cls: "benign", label: "通常応答" }
+              : { cls: "ng", label: "失敗" };
 
   const inspectorTabs: { key: InspectorTab; label: string; locked?: boolean }[] = [
     { key: "hint", label: "ヒント" },
@@ -212,17 +272,19 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                 <span>パラメータ</span>
                 <span className="dim">ここで直接改ざんできます</span>
               </div>
-              {lab.fields.map((f) => (
+              {visibleFields.map((f) => (
                 <label key={f.name} className="param-row">
                   <span className="param-key mono">{f.name}</span>
                   {f.multiline ? (
                     <textarea
                       className="mono"
-                      rows={f.name === "html" ? 6 : 3}
+                      aria-label={f.name}
+                      rows={f.name === "html" || f.name === "query" ? 6 : 3}
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
+                      onFocus={() => setFocusField(f.name)}
                       onChange={(e) => setField(f.name, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
@@ -234,11 +296,13 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                   ) : (
                     <input
                       className="mono"
+                      aria-label={f.name}
                       value={inputs[f.name] ?? ""}
                       spellCheck={false}
                       autoComplete="off"
                       autoCapitalize="off"
                       autoCorrect="off"
+                      onFocus={() => setFocusField(f.name)}
                       onChange={(e) => setField(f.name, e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
@@ -250,6 +314,31 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                   )}
                 </label>
               ))}
+              {canAddParams && (
+                <div className="param-add">
+                  <div className="param-add-row">
+                    <input
+                      type="text"
+                      aria-label="新しいパラメータ名"
+                      placeholder="パラメータ名"
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      value={newParamName}
+                      onChange={(e) => setNewParamName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addNamedParam(newParamName);
+                        }
+                      }}
+                    />
+                    <button type="button" className="btn" onClick={() => addNamedParam(newParamName)}>
+                      追加
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="proxy-actions">
               <button type="button" className="btn btn-accent" onClick={() => forward()}>
@@ -260,6 +349,9 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                 className="btn"
                 onClick={() => {
                   setInputs(defaultInputs(lab));
+                  setRevealed([]);
+                  setExtraParams([]);
+                  setNewParamName("");
                   clear();
                 }}
               >
@@ -284,9 +376,49 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                     {fired !== null && <div>alert() が実行されました: {JSON.stringify(fired)}</div>}
                     {result.note && <div>{result.note}</div>}
                     {succeeded && <div className="notice-strong">Lv{level} クリア — 「解答」タブが解放されました</div>}
+                    {succeeded && result.recap && result.recap.length > 0 && (
+                      <ol className="recap">
+                        {result.recap.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ol>
+                    )}
                   </div>
                 )}
-                <pre className="console">{result.output.join("\n")}</pre>
+                {result.assembled && !assembledDuplicatesOutput(result.assembled, result.output) && (
+                  <div className="assembled">
+                    <div className="assembled-label mono">サーバーが組み立てた処理</div>
+                    <pre className="console assembled-pre">{result.assembled}</pre>
+                  </div>
+                )}
+                <details key={runId} className="console-details">
+                  <summary>コンソール（詳細）</summary>
+                  <pre className="console">{result.output.join("\n")}</pre>
+                </details>
+                {labLoot.length > 0 && (
+                  <div className="loot">
+                    <div className="loot-label mono">戦利品</div>
+                    <p className="dim loot-hint">このラボで見つけた秘密です。クリックでフォーカス中のパラメータへ挿入します。</p>
+                    <div className="loot-list">
+                      {labLoot.map((item) => (
+                        <button
+                          key={`${item.labId}-${item.id}`}
+                          type="button"
+                          className="loot-chip"
+                          title={item.value}
+                          onClick={() => {
+                            const target = focusField ?? visibleFields[0]?.name;
+                            if (target) setField(target, item.value);
+                            void navigator.clipboard?.writeText(item.value).catch(() => undefined);
+                          }}
+                        >
+                          <span className="loot-chip-lab">{item.label}</span>
+                          <span className="loot-chip-val mono">{item.value}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

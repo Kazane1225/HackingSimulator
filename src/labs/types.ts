@@ -15,6 +15,11 @@ export interface LabField {
   default?: string;
   /** Monospace font for payload-ish fields. */
   mono?: boolean;
+  /**
+   * Omitted from the default Proxy list. The learner adds it while intercepting
+   * (Burp-style extra parameter). The target app never shows these knobs.
+   */
+  hidden?: boolean;
 }
 
 /** Values entered by the learner, keyed by {@link LabField.name}. */
@@ -39,6 +44,24 @@ export interface AttackResult {
    * order). The workbench shows "通常応答" instead of treating it as a failed attack.
    */
   benign?: boolean;
+  /**
+   * The attempt did not clear the level, but revealed a useful next step
+   * (correct password but MFA required, own order with a leaked related id, …).
+   */
+  progress?: boolean;
+  /** Server-side statement / path / command that was actually built. */
+  assembled?: string;
+  /** Short replay of the attack, shown only when {@link solved} is true. */
+  recap?: string[];
+  /** Secrets discovered in this response (MFA codes, flags, related IDs, …). */
+  loot?: LootItem[];
+}
+
+/** An item the learner can reuse in a later request. */
+export interface LootItem {
+  id: string;
+  label: string;
+  value: string;
 }
 
 /** Educational description of one security level of a lab. */

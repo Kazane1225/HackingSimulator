@@ -16,6 +16,8 @@
   --ng-soft: rgba(229, 100, 107, 0.12);
   --info: #5a9fd4;
   --info-soft: rgba(90, 159, 212, 0.12);
+  --progress: #e3b341;
+  --progress-soft: rgba(227, 179, 65, 0.16);
   --mono: "JetBrains Mono", "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
   --sans: "Inter", "Segoe UI", system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
   color-scheme: dark;
@@ -1308,6 +1310,28 @@ a.owasp-cell:hover {
 .param-row textarea:focus {
   border-color: var(--accent);
 }
+.param-add {
+  margin: 4px 0 8px;
+}
+.param-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.param-add-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  outline: none;
+  background: var(--bg-sunken);
+  color: var(--text);
+  padding: 5px 6px;
+  font-size: 11px;
+}
+.param-add-row input:focus {
+  border-color: var(--accent);
+}
 .proxy-actions {
   display: flex;
   gap: 7px;
@@ -1367,6 +1391,11 @@ a.owasp-cell:hover {
   border-color: var(--info);
   background: var(--info-soft);
 }
+.status-badge.progress {
+  color: var(--progress);
+  border-color: var(--progress);
+  background: var(--progress-soft);
+}
 
 .empty {
   padding: 22px 14px;
@@ -1390,12 +1419,106 @@ a.owasp-cell:hover {
 .notice.held {
   background: var(--accent-soft);
 }
+.notice.progress {
+  background: var(--progress-soft);
+}
+.console-details {
+  border-top: 1px solid var(--line-soft);
+}
+.console-details > summary {
+  cursor: pointer;
+  padding: 6px 12px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.console-details[open] > summary {
+  border-bottom: 1px solid var(--line-soft);
+}
 .notice.benign {
   background: var(--info-soft);
 }
 .notice-strong {
   color: var(--ok);
   font-weight: 600;
+}
+.recap {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.recap li {
+  margin: 2px 0;
+  color: var(--text);
+}
+.assembled {
+  border-bottom: 1px solid var(--line-soft);
+}
+.assembled-label,
+.loot-label {
+  padding: 6px 12px 0;
+  color: var(--accent);
+  font-size: 11px;
+}
+.assembled-pre {
+  max-height: 140px;
+}
+.loot {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.loot-hint {
+  margin: 2px 0 8px;
+  font-size: 11px;
+}
+.loot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.loot-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.loot-chip:hover {
+  border-color: var(--accent);
+}
+.loot-chip-lab {
+  font-size: 11px;
+  color: var(--dim);
+}
+.loot-chip-val {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.app-shell {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: #1c1f24;
+  color: #d7dae0;
+}
+.app-shell-out {
+  margin: 0 0 8px;
+  min-height: 4.5em;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.app-users td {
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .console,

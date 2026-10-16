@@ -37,8 +37,22 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: "非冪等フィルタ",
     aliases: ["idempotent", "単一パス"],
     description:
-      "何度適用しても結果が変わらない処理を『冪等』と呼びます。1 回だけ除去する処理は、除去の結果として禁止語が再生成され得ます（例: `oorr` → `or`）。",
-    labs: ["sqli", "xss", "path"],
+      "何度適用しても結果が変わらない処理を『冪等』と呼びます。1 回だけ除去する処理は、除去の結果として禁止語が再生成され得ます（例: `....//` から `../`）。",
+    labs: ["path"],
+  },
+  {
+    term: "出力コンテキスト",
+    aliases: ["attribute injection", "属性インジェクション"],
+    description:
+      "同じ文字列でも、HTML 本文・属性値・JavaScript 文字列では必要なエスケープが違います。ある場所向けの対策が、別の埋め込み先では無効になります。",
+    labs: ["xss"],
+  },
+  {
+    term: "アルゴリズム混同",
+    aliases: ["algorithm confusion", "alg:none"],
+    description:
+      "JWT の header.alg をサーバーが信用すると、RS256 用の公開鍵を HS256 の HMAC 秘密として使わせるなどのすり替えが起きます。検証アルゴリズムはサーバー側で固定します。",
+    labs: ["jwt"],
   },
   {
     term: "プレースホルダ",
@@ -147,7 +161,14 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: "CSRF トークン",
     aliases: ["synchronizer token", "同期トークン"],
     description:
-      "セッションごとに発行するランダムな値。リクエストに含めさせてサーバーが『値を厳密に』照合します。存在確認だけでは意味がありません。",
+      "セッションごとに発行するランダムな値。リクエストのトークンが『今のセッションに紐づく値』と一致するかまで見ます。発行済みかどうかだけ、あるいは別ユーザーのトークンを受け入れる実装では足りません。",
+    labs: ["csrf"],
+  },
+  {
+    term: "CRLF / ヘッダインジェクション",
+    aliases: ["HTTP response splitting", "Set-Cookie 注入", "%0d%0a"],
+    description:
+      "CR（\\r）と LF（\\n）は HTTP ヘッダの区切りです。ユーザー入力を Set-Cookie などに連結して改行を除去しないと、追加のヘッダ（別の Cookie など）を注入できます。",
     labs: ["csrf"],
   },
   {
@@ -182,8 +203,29 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: "MFA",
     aliases: ["多要素認証", "Multi-Factor Authentication"],
     description:
-      "知識・所持・生体など異なる種類の要素を複数使う認証。回復フローが弱いと、通常ログインの MFA を迂回されます。",
+      "知識・所持・生体など異なる種類の要素を複数使う認証。デバッグ応答や回復フローが弱いと、通常ログインの MFA を迂回されます。",
     labs: ["auth"],
+  },
+  {
+    term: "デバッグ情報の漏洩",
+    aliases: ["verbose error", "X-Debug"],
+    description:
+      "開発用の詳細エラーやメールプレビューを本番に残すと、MFA コードや内部パスなどの秘密が応答に出ます。認証失敗時ほど出してはいけません。",
+    labs: ["auth"],
+  },
+  {
+    term: "HMAC",
+    aliases: ["HS256", "HMAC-SHA256"],
+    description:
+      "共有秘密鍵によるメッセージ認証。JWT の HS256 は header.payload を HMAC-SHA256 し、秘密鍵が弱いとオフラインで署名し直せます。",
+    labs: ["jwt"],
+  },
+  {
+    term: "jku",
+    aliases: ["JWKS", "JSON Web Key Set"],
+    description:
+      "JWT header が指す鍵セットの URL。サーバーが任意の jku から鍵を取ると、攻撃者の JWKS（oct 鍵を含む）で署名を通せてしまいます。",
+    labs: ["jwt"],
   },
   {
     term: "JWT",

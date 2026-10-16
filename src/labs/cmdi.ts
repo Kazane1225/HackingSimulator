@@ -1,10 +1,11 @@
 import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
+import { traced } from "./trace";
 
 /**
  * Simulated OS Command Injection lab (a "ping" diagnostics tool).
  *
  * A naive app builds `ping -c 1 <host>` and runs it through a shell. We
- * implement a tiny shell (separators + command substitution) over a tiny
+ * implement a tiny shell (quoted separators + command substitution) over a tiny
  * virtual filesystem. Objective: read the contents of flag.txt.
  */
 
@@ -23,15 +24,6 @@ function stripRecursive(s: string, re: RegExp): string {
     s = s.replace(re, "");
   } while (s !== prev);
   return s;
-}
-
-/** Apply the defense for `level` to the host field. */
-function sanitize(level: Level, s: string): string {
-  if (level === 1) return s;
-  if (level === 2) return stripRecursive(s, /;/g); // only semicolons
-  if (level === 3) return stripRecursive(s, /[;&|]/g); // separators, but not \n or $()
-  if (level === 4) return stripRecursive(s, /[;&|\r\n]/g); // + newlines, but not $()
-  return s; // level 5 validates instead (see run)
 }
 
 // --- Tiny shell ------------------------------------------------------------
@@ -63,26 +55,96 @@ function runCommand(cmd: string): string {
   }
 }
 
-/** Expand `$(...)` and backtick substitutions, running the inner command. */
+type Quote = "'" | '"' | null;
+
+/** Expand `$(...)` and backticks, but not inside single quotes. */
 function expandSubstitutions(line: string, exec: (c: string) => string): string {
-  let out = line;
-  let prev: string;
-  do {
-    prev = out;
-    out = out.replace(/\$\(([^()]*)\)/g, (_m, inner) => exec(inner).trim());
-    out = out.replace(/`([^`]*)`/g, (_m, inner) => exec(inner).trim());
-  } while (out !== prev);
+  let out = "";
+  let i = 0;
+  let quote: Quote = null;
+  while (i < line.length) {
+    const c = line[i];
+    if (quote === null && (c === "'" || c === '"')) {
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (quote && c === quote) {
+      quote = null;
+      out += c;
+      i++;
+      continue;
+    }
+    if (quote !== "'" && c === "$" && line[i + 1] === "(") {
+      let depth = 1;
+      let j = i + 2;
+      while (j < line.length && depth > 0) {
+        if (line[j] === "(") depth++;
+        else if (line[j] === ")") depth--;
+        j++;
+      }
+      out += exec(line.slice(i + 2, j - 1)).trim();
+      i = j;
+      continue;
+    }
+    if (quote !== "'" && c === "`") {
+      const j = line.indexOf("`", i + 1);
+      if (j !== -1) {
+        out += exec(line.slice(i + 1, j)).trim();
+        i = j + 1;
+        continue;
+      }
+    }
+    out += c;
+    i++;
+  }
   return out;
 }
 
-/** Run a full command line (separators + substitution), returning stdout. */
+const SEPS = ["&&", "||", "\n", "\r", ";", "|", "&"];
+
+function splitUnquoted(line: string): string[] {
+  const segs: string[] = [];
+  let cur = "";
+  let quote: Quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote === null && (c === "'" || c === '"')) {
+      quote = c;
+      cur += c;
+      continue;
+    }
+    if (quote && c === quote) {
+      quote = null;
+      cur += c;
+      continue;
+    }
+    if (quote === null) {
+      const sep = SEPS.find((s) => line.startsWith(s, i));
+      if (sep) {
+        if (cur.trim()) segs.push(cur.trim());
+        cur = "";
+        i += sep.length - 1;
+        continue;
+      }
+    }
+    cur += c;
+  }
+  if (cur.trim()) segs.push(cur.trim());
+  return segs;
+}
+
+/** Run a full command line (quoted separators + substitution), returning stdout. */
 function execLine(line: string, exec: (c: string) => string): string[] {
-  const expanded = expandSubstitutions(line, exec);
-  const segments = expanded
-    .split(/&&|\|\||;|\||&|\r?\n/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return segments.map((seg) => exec(seg));
+  return splitUnquoted(expandSubstitutions(line, exec)).map((seg) => exec(seg));
+}
+
+function wrapHost(level: Level, host: string): string {
+  if (level === 1) return `ping -c 1 ${host}`;
+  if (level === 2) return `ping -c 1 ${stripRecursive(host, /;/g)}`;
+  if (level === 3) return `ping -c 1 "${host}"`;
+  return `ping -c 1 '${host}'`;
 }
 
 function run(level: Level, input: LabInput): AttackResult {
@@ -109,8 +171,7 @@ function run(level: Level, input: LabInput): AttackResult {
     };
   }
 
-  const host = sanitize(level, rawHost);
-  const fullCommand = `ping -c 1 ${host}`;
+  const fullCommand = wrapHost(level, rawHost);
   output.push("$ " + fullCommand);
 
   let leaked = false;
@@ -125,13 +186,22 @@ function run(level: Level, input: LabInput): AttackResult {
     if (r) output.push(r);
   }
 
-  return {
-    solved: leaked,
-    output,
-    note: leaked
-      ? "注入したコマンドが実行され、flag.txt を読み出しました。"
-      : "注入は失敗しました。ping しか実行されていません。",
-  };
+  return traced(
+    {
+      solved: leaked,
+      output,
+      note: leaked
+        ? "注入したコマンドが実行され、flag.txt を読み出しました。"
+        : "注入は失敗しました。ping しか実行されていません。",
+    },
+    fullCommand,
+    {
+      recap: leaked
+        ? ["入力がシェルの構文として解釈された", "ping 以外のコマンドが走った", "flag.txt の中身が出力された"]
+        : undefined,
+      loot: leaked ? [{ id: "cmdi-flag", label: "flag.txt", value: FLAG }] : undefined,
+    },
+  );
 }
 
 const levels: Record<Level, LevelSpec> = {
@@ -159,28 +229,28 @@ const levels: Record<Level, LevelSpec> = {
 exec("ping -c 1 " + h);`,
   },
   3: {
-    defense: "区切り文字 ; & | を除去する。",
+    defense: "ホスト名をダブルクオートで囲んでシェルに渡す。",
     hints: [
-      "Lv2 の手口は通りません。ソースを読み、除去される文字と『除去されない文字』を比べましょう。",
-      "セミコロンも && も | も消されます。改行や『コマンド置換』はどうでしょう？",
-      "host 欄は複数行入力できます。1 行目に ping の宛先、2 行目にコマンドを書いてみましょう。",
+      "Lv2 の `&&` はクオートの内側では連結になりません。防御が『文字を消す』から『クオートで囲む』に変わっています。",
+      "ダブルクオートは区切り文字を無効にしますが、一部の展開は止まりません。",
+      "クオートの中でも先に実行される、`$()` の形を試しましょう。",
     ],
     solution:
-      "host 欄（複数行入力可）で 1 行目に `8.8.8.8`、2 行目に `cat flag.txt` と改行区切りで入力。改行もコマンド区切りです。`$(cat flag.txt)` でも可。",
-    code: `let h = host.replace(/[;&|]/g, "");
-exec("ping -c 1 " + h);`,
+      "host に `8.8.8.8 $(cat flag.txt)` を入力。ダブルクオート内でもコマンド置換 `$()` は評価され、flag が ping の引数に展開されます。",
+    code: `exec('ping -c 1 "' + host + '"'); // 囲めば安全、と思っている
+// ダブルクオート内の $(...) は展開される`,
   },
   4: {
-    defense: "区切り文字 ; & | と改行を除去する。",
+    defense: "ホスト名をシングルクオートで囲んでシェルに渡す。",
     hints: [
-      "Lv3 の手口は通りません。区切り文字を『使わず』に別のコマンドを実行する構文を探しましょう。",
-      "区切り文字も改行も消されます。でも『コマンドの出力をその場に埋め込む』構文は残っていませんか？",
-      "`$(コマンド)` はコマンド置換です。括弧内が先に実行され、その出力が展開されます。",
+      "Lv3 の `$()` はシングルクオートの中では展開されません。ソースの囲み文字を確認しましょう。",
+      "シングルクオートを無効化できる文字は、シングルクオート自身です。",
+      "先にクオートを閉じ、`;` で別コマンドを挟み、もう一度開く形を作れますか？",
     ],
     solution:
-      "host に `8.8.8.8 $(cat flag.txt)` を入力。コマンド置換 `$(...)` は除去対象外なので、内部の cat が実行されます（バッククォート `` `cat flag.txt` `` でも可）。",
-    code: `let h = host.replace(/[;&|\\r\\n]/g, ""); // $(...) を見落としている
-exec("ping -c 1 " + h);`,
+      "host に `'; cat flag.txt; '` を入力。`'...'` を閉じて `;` で `cat` を挟むと、囲みの外でコマンドが実行されます。",
+    code: `exec("ping -c 1 '" + host + "'"); // 単一引用符なら $() も止まる
+// 入力に ' が含まれると囲みが壊れる`,
   },
   5: {
     defense: "入力を厳格に検証し、シェルを使わず引数配列で実行する。",
@@ -230,15 +300,15 @@ export const cmdiLab: Lab = {
 
 このラボは \`ping -c 1 <入力>\` を疑似シェルで実行します。区切り文字やコマンド置換を使って \`cat flag.txt\` を実行し、フラグを読み出せればクリアです。
 
-レベルが上がると危険な文字を 1 つずつブラックリストで消そうとしますが、シェルのメタ文字は非常に多く（区切り、改行、置換…）、消し漏れが必ず生まれます。
+レベルが上がると、文字の除去、ダブルクオート囲み、シングルクオート囲みと対策の種類が変わります。囲みはシェルを使っている限り、閉じ引用符や \`$(...)\` で壊せます。
 
-根本対策は Lv5 です。入力を許可リストで厳格に検証したうえで、シェルを介さず引数配列で外部コマンドを実行します（例: Node の \`execFile\`、Python の \`subprocess.run([...], shell=False)\`）。シェルを使わなければ、メタ文字は単なる文字列として扱われ、注入は成立しません。`,
+根本対策は Lv5 です。入力を許可リストで検証したうえで、シェルを介さず引数配列で実行します（例: Node の \`execFile\`、Python の \`subprocess.run([...], shell=False)\`）。`,
   levels,
   run,
   exploits: {
     1: { host: "8.8.8.8; cat flag.txt" },
     2: { host: "8.8.8.8 && cat flag.txt" },
-    3: { host: "8.8.8.8\ncat flag.txt" },
-    4: { host: "8.8.8.8 $(cat flag.txt)" },
+    3: { host: "8.8.8.8 $(cat flag.txt)" },
+    4: { host: "'; cat flag.txt; '" },
   },
 };

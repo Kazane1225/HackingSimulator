@@ -56,8 +56,17 @@ export class LabPage {
     return this.pane("proxy").getByRole("textbox", { name, exact: true });
   }
 
-  async setParam(name: string, value: string) {
+  async ensureParam(name: string) {
     await this.openPane("proxy");
+    if ((await this.proxyParam(name).count()) > 0) return;
+    const box = this.pane("proxy").getByLabel("新しいパラメータ名");
+    if ((await box.count()) === 0) return;
+    await box.fill(name);
+    await this.pane("proxy").getByRole("button", { name: "追加", exact: true }).click();
+  }
+
+  async setParam(name: string, value: string) {
+    await this.ensureParam(name);
     await this.proxyParam(name).fill(value);
   }
 
@@ -76,6 +85,7 @@ export class LabPage {
   async sendAll(fields: Record<string, string>) {
     await this.openPane("proxy");
     for (const [name, value] of Object.entries(fields)) {
+      await this.ensureParam(name);
       await this.proxyParam(name).fill(value);
     }
     await this.forward();
