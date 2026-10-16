@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { decodeJwtPart, makeJwt } from "../labs/jwt";
 import type { AttackResult, LabInput, Level } from "../labs/types";
+import type { BrowserTab } from "./BrowserChrome";
 import { XssPreview } from "./XssPreview";
 
 /** Context handed to each lab's target-app renderer. */
@@ -14,13 +15,17 @@ export interface AppCtx {
   runId: number;
   onFire: (message: string) => void;
   level: Level;
+  browserTab: string;
+  setBrowserTab: (id: string) => void;
 }
 
 export interface LabUI {
-  /** Address shown in the fake browser's omnibox. */
+  /** Address shown in the fake browser's omnibox when {@link browserTabs} is omitted. */
   url: string;
-  /** Tab/site title. */
+  /** Tab/site title when {@link browserTabs} is omitted. */
   site: string;
+  /** Extra chrome tabs (CSRF shows the victim bank and the attacker page). */
+  browserTabs?: BrowserTab[];
   /** Build the raw HTTP request preview lines for the proxy. */
   request: (inputs: LabInput) => string[];
   /** Render the interactive target application inside the browser viewport. */
@@ -236,9 +241,62 @@ const path: LabUI = {
   ),
 };
 
+function CsrfApp({ inputs, setField, submit, result, succeeded, browserTab, setBrowserTab, runId }: AppCtx) {
+  const base = 1_000_000;
+  const amount = Number((inputs.html ?? "").match(/amount[^0-9<>]{0,20}(\d+)/)?.[1] ?? 0);
+  const balance = succeeded ? base - amount : base;
+
+  useEffect(() => {
+    if (runId > 0 && result) setBrowserTab("bank");
+  }, [runId, result, setBrowserTab]);
+
+  if (browserTab === "evil") {
+    return (
+      <div className="app-screen">
+        <div className="app-brand">Cute Kittens</div>
+        <h2 className="app-h">かわいい子猫の写真</h2>
+        <p className="app-p">被害者が開く罠ページです。銀行のタブとは別サイトです。</p>
+        <label className="app-field">
+          罠ページの HTML
+          <textarea
+            className="mono"
+            rows={6}
+            value={inputs.html ?? ""}
+            onChange={(e) => setField("html", e.target.value)}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </label>
+        <button type="button" className="app-btn" onClick={() => submit()}>
+          被害者がこのページを開く
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-screen">
+      <div className="app-brand">SecureBank</div>
+      <div className="app-badge ok">victim としてログイン中</div>
+      <h2 className="app-h">普通預金</h2>
+      <div className="app-balance">
+        <span>口座残高</span>
+        <strong className={succeeded ? "drained" : ""}>{money(balance)}</strong>
+      </div>
+      {succeeded && <div className="app-alert warn">{money(amount)} が attacker へ送金されました。</div>}
+      {result && !succeeded && <div className="app-alert">不正な送金リクエストは実行されませんでした。</div>}
+    </div>
+  );
+}
+
 const csrf: LabUI = {
-  url: "https://evil.example/cute-kittens",
-  site: "攻撃者のページ",
+  url: "https://bank.example/account",
+  site: "SecureBank",
+  browserTabs: [
+    { id: "bank", url: "https://bank.example/account", title: "SecureBank" },
+    { id: "evil", url: "https://evil.example/cute-kittens", title: "かわいい子猫" },
+  ],
   request: (i) => {
     const html = i.html ?? "";
     return [
@@ -248,47 +306,7 @@ const csrf: LabUI = {
       ...html.split("\n"),
     ];
   },
-  renderApp: ({ inputs, setField, submit, result, succeeded }) => {
-    const base = 1_000_000;
-    const amount = Number((inputs.html ?? "").match(/amount[^0-9<>]{0,20}(\d+)/)?.[1] ?? 0);
-    const balance = succeeded ? base - amount : base;
-    return (
-      <div className="app-split">
-        <div className="app-pane">
-          <div className="app-pane-tab">bank.example（被害者のタブ）</div>
-          <div className="app-screen tight">
-            <div className="app-badge ok">victim としてログイン中</div>
-            <div className="app-balance">
-              <span>口座残高</span>
-              <strong className={succeeded ? "drained" : ""}>{money(balance)}</strong>
-            </div>
-            {succeeded && <div className="app-alert warn">{money(amount)} が attacker へ送金されました。</div>}
-          </div>
-        </div>
-        <div className="app-pane">
-          <div className="app-pane-tab">evil.example（あなたが作る罠ページ）</div>
-          <div className="app-screen tight">
-            <label className="app-field">
-              罠ページの HTML
-              <textarea
-                className="mono"
-                rows={6}
-                value={inputs.html ?? ""}
-                onChange={(e) => setField("html", e.target.value)}
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-              />
-            </label>
-            <button type="button" className="app-btn" onClick={() => submit()}>
-              被害者がこのページを開く ▶
-            </button>
-            {result && !succeeded && <div className="app-alert">送金は実行されませんでした。</div>}
-          </div>
-        </div>
-      </div>
-    );
-  },
+  renderApp: (ctx) => <CsrfApp {...ctx} />,
 };
 
 const idor: LabUI = {

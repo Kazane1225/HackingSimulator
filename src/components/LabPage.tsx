@@ -42,6 +42,9 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [hintsShown, setHintsShown] = useState<Partial<Record<Level, number>>>({});
   const [mobileTab, setMobileTab] = useState<MobileTab>("target");
 
+  const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
+  const [browserTab, setBrowserTab] = useState(browserTabs[0].id);
+
   const spec = lab.levels[level];
   const shownHints = Math.min(hintsShown[level] ?? 1, spec.hints.length);
   const solvedHere = isSolved(id, level);
@@ -57,6 +60,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     setResult(null);
     setFired(null);
     setHeld(false);
+    setBrowserTab(browserTabs[0].id);
   };
 
   const selectLevel = (lv: Level) => {
@@ -165,8 +169,24 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
 
       <div className={`workbench show-${mobileTab}`}>
         <section className="wb-target" data-testid="pane-target">
-          <BrowserChrome url={ui.url} title={ui.site} onReload={clear}>
-            {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire, level })}
+          <BrowserChrome
+            tabs={browserTabs}
+            activeTabId={browserTab}
+            onTabChange={setBrowserTab}
+            onReload={clear}
+          >
+            {ui.renderApp({
+              inputs,
+              setField,
+              submit: submitFromApp,
+              result,
+              succeeded,
+              runId,
+              onFire,
+              level,
+              browserTab,
+              setBrowserTab,
+            })}
           </BrowserChrome>
         </section>
 
