@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import type { AttackResult, LabInput } from "../labs/types";
+import { useEffect, useState, type ReactNode } from "react";
+import { decodeJwtPart, makeJwt } from "../labs/jwt";
+import type { AttackResult, LabInput, Level } from "../labs/types";
 import { XssPreview } from "./XssPreview";
 
 /** Context handed to each lab's target-app renderer. */
@@ -12,6 +13,7 @@ export interface AppCtx {
   succeeded: boolean;
   runId: number;
   onFire: (message: string) => void;
+  level: Level;
 }
 
 export interface LabUI {
@@ -298,21 +300,89 @@ const idor: LabUI = {
     "Cookie: session=alice-session",
     `X-User-Role: ${i.role ?? "user"}`,
   ],
-  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
+  renderApp: ({ submit, result, succeeded }) => (
     <div className="app-screen">
       <div className="app-badge ok">alice としてログイン中</div>
-      <h2 className="app-h">注文詳細</h2>
-      <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <label>API エンドポイント<input className="mono" value={inputs.endpoint ?? ""} onChange={(e) => setField("endpoint", e.target.value)} /></label>
-        <label>注文 ID<input className="mono" value={inputs.orderId ?? ""} onChange={(e) => setField("orderId", e.target.value)} /></label>
-        <label>owner<input className="mono" aria-label="owner" value={inputs.owner ?? ""} onChange={(e) => setField("owner", e.target.value)} /></label>
-        <label>role<input className="mono" aria-label="role" value={inputs.role ?? ""} onChange={(e) => setField("role", e.target.value)} /></label>
-        <button type="submit" className="app-btn">注文を表示</button>
-      </form>
-      {result && <div className={`app-doc ${succeeded ? "leaked" : ""}`}><pre>{result.output.join("\n")}</pre></div>}
+      <h2 className="app-h">注文履歴</h2>
+      <p className="app-p">自分の注文だけが表示されます。owner や role の改ざんは Proxy で行います。</p>
+      <table className="app-table">
+        <thead>
+          <tr>
+            <th>注文 ID</th>
+            <th>商品</th>
+            <th>金額</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="mono">1001</td>
+            <td>USB-C ケーブル</td>
+            <td className="mono">{money(2480)}</td>
+            <td>
+              <button type="button" className="app-btn" onClick={() => submit({ orderId: "1001" })}>
+                表示
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {result && (
+        <div className={`app-doc ${succeeded ? "leaked" : ""}`}>
+          <div className="app-doc-head mono">{succeeded ? "取得した注文（越権）" : "取得結果"}</div>
+          <pre>{result.output.join("\n")}</pre>
+        </div>
+      )}
     </div>
   ),
 };
+
+function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx) {
+  const [tries, setTries] = useState(0);
+  const showMfa = level >= 4;
+  return (
+    <div className="app-login">
+      <div className="app-brand">CorpID</div>
+      <h2 className="app-h">{succeeded ? "管理コンソール" : "アカウントにログイン"}</h2>
+      {succeeded ? (
+        <div className="app-badge ok">admin としてログイン中</div>
+      ) : (
+        <form
+          className="app-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setTries((n) => n + 1);
+            submit();
+          }}
+        >
+          <label>
+            ユーザー名
+            <input className="mono" value={inputs.username ?? ""} onChange={(e) => setField("username", e.target.value)} autoComplete="off" />
+          </label>
+          <label>
+            パスワード
+            <input className="mono" type="text" value={inputs.password ?? ""} onChange={(e) => setField("password", e.target.value)} autoComplete="off" />
+          </label>
+          {showMfa && (
+            <label>
+              MFA コード
+              <input className="mono" value={inputs.mfaCode ?? ""} onChange={(e) => setField("mfaCode", e.target.value)} autoComplete="off" />
+            </label>
+          )}
+          <button type="submit" className="app-btn">ログイン</button>
+        </form>
+      )}
+      {result && !succeeded && (
+        <div className="app-alert">
+          {result.note ?? "認証できませんでした。"}
+          {level <= 2 && tries >= 3 && (
+            <div className="app-alert-extra">この IP からの連続試行です。アカウント単位の制限はありません。</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const auth: LabUI = {
   url: "https://accounts.example/login",
@@ -325,23 +395,93 @@ const auth: LabUI = {
     "",
     `username=${i.username ?? ""}&password=${i.password ?? ""}&mfa=${i.mfaCode ?? ""}`,
   ],
-  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
-    <div className="app-login">
-      <div className="app-brand">CorpID</div>
-      <h2 className="app-h">{succeeded ? "管理コンソール" : "アカウントにログイン"}</h2>
-      {succeeded ? <div className="app-badge ok">admin としてログイン中</div> : (
-        <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-          <label>ユーザー名<input className="mono" value={inputs.username ?? ""} onChange={(e) => setField("username", e.target.value)} /></label>
-          <label>パスワード<input className="mono" type="text" value={inputs.password ?? ""} onChange={(e) => setField("password", e.target.value)} /></label>
-          <label>Session ID<input className="mono" value={inputs.sessionId ?? ""} onChange={(e) => setField("sessionId", e.target.value)} /></label>
-          <label>MFA コード<input className="mono" value={inputs.mfaCode ?? ""} onChange={(e) => setField("mfaCode", e.target.value)} /></label>
-          <button type="submit" className="app-btn">ログイン</button>
-        </form>
-      )}
-      {result && !succeeded && <div className="app-alert">認証できませんでした。</div>}
-    </div>
-  ),
+  renderApp: (ctx) => <AuthApp {...ctx} />,
 };
+
+function prettyJwtPart(part: string): string {
+  const decoded = decodeJwtPart(part);
+  return decoded ? JSON.stringify(decoded, null, 2) : "";
+}
+
+function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
+  const token = inputs.token ?? "";
+  const [headerText, setHeaderText] = useState("");
+  const [payloadText, setPayloadText] = useState("");
+  const [signature, setSignature] = useState("");
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const [head = "", body = "", sig = ""] = token.split(".");
+    setHeaderText(prettyJwtPart(head) || head);
+    setPayloadText(prettyJwtPart(body) || body);
+    setSignature(sig);
+    setParseError(null);
+  }, [token]);
+
+  const assemble = (): string | null => {
+    try {
+      const header = JSON.parse(headerText) as object;
+      const payload = JSON.parse(payloadText) as object;
+      const next = makeJwt(header, payload, signature);
+      setField("token", next);
+      setParseError(null);
+      return next;
+    } catch {
+      setParseError("header / payload は JSON で入力してください。");
+      return null;
+    }
+  };
+
+  return (
+    <div className="app-screen">
+      <div className="app-brand">API Console</div>
+      <h2 className="app-h">管理者 API</h2>
+      <p className="app-p">JWT は署名付きの JSON です。header と payload は誰でも読めます。組み立ててから送信します。</p>
+      <div className="jwt-grid">
+        <label className="app-field">
+          header
+          <textarea className="mono" rows={6} aria-label="JWT header" value={headerText} onChange={(e) => setHeaderText(e.target.value)} spellCheck={false} />
+        </label>
+        <label className="app-field">
+          payload
+          <textarea className="mono" rows={6} aria-label="JWT payload" value={payloadText} onChange={(e) => setPayloadText(e.target.value)} spellCheck={false} />
+        </label>
+      </div>
+      <label className="app-field">
+        signature
+        <input className="mono" aria-label="JWT signature" value={signature} onChange={(e) => setSignature(e.target.value)} autoComplete="off" />
+      </label>
+      <label className="app-field">
+        生トークン
+        <textarea
+          className="mono"
+          rows={3}
+          aria-label="raw JWT"
+          value={token}
+          onChange={(e) => setField("token", e.target.value)}
+          spellCheck={false}
+        />
+      </label>
+      <div className="app-actions">
+        <button type="button" className="app-btn" onClick={() => assemble()}>
+          トークンを組み立てる
+        </button>
+        <button
+          type="button"
+          className="app-btn"
+          onClick={() => {
+            const next = assemble();
+            if (next) submit({ token: next });
+          }}
+        >
+          GET /admin
+        </button>
+      </div>
+      {parseError && <div className="app-alert">{parseError}</div>}
+      {result && <pre className={`app-term ${succeeded ? "leaked" : ""}`}>{result.output.join("\n")}</pre>}
+    </div>
+  );
+}
 
 const jwt: LabUI = {
   url: "https://api.example/admin",
@@ -351,17 +491,7 @@ const jwt: LabUI = {
     "Host: api.example",
     `Authorization: Bearer ${i.token ?? ""}`,
   ],
-  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
-    <div className="app-screen">
-      <div className="app-brand">API Console</div>
-      <h2 className="app-h">管理者 API</h2>
-      <label className="app-field">JWT
-        <textarea className="mono" rows={6} value={inputs.token ?? ""} onChange={(e) => setField("token", e.target.value)} spellCheck={false} />
-      </label>
-      <button type="button" className="app-btn" onClick={() => submit()}>GET /admin</button>
-      {result && <pre className={`app-term ${succeeded ? "leaked" : ""}`}>{result.output.join("\n")}</pre>}
-    </div>
-  ),
+  renderApp: (ctx) => <JwtApp {...ctx} />,
 };
 
 const ssrf: LabUI = {
@@ -409,13 +539,26 @@ const upload: LabUI = {
     <div className="app-screen">
       <div className="app-brand">Profile</div>
       <h2 className="app-h">アバター画像の変更</h2>
+      <p className="app-p">画面ではファイル名と内容だけ指定します。Content-Type の改ざんは Proxy で行います。</p>
       <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <label>ファイル名<input className="mono" value={inputs.filename ?? ""} onChange={(e) => setField("filename", e.target.value)} /></label>
-        <label>Content-Type<input className="mono" value={inputs.contentType ?? ""} onChange={(e) => setField("contentType", e.target.value)} /></label>
-        <label>ファイル内容<textarea className="mono" rows={4} value={inputs.content ?? ""} onChange={(e) => setField("content", e.target.value)} spellCheck={false} /></label>
+        <div className="upload-drop">
+          <span className="upload-drop-label">選択中のファイル</span>
+          <label>
+            ファイル名
+            <input className="mono" value={inputs.filename ?? ""} onChange={(e) => setField("filename", e.target.value)} autoComplete="off" />
+          </label>
+        </div>
+        <label>
+          ファイル内容
+          <textarea className="mono" rows={4} value={inputs.content ?? ""} onChange={(e) => setField("content", e.target.value)} spellCheck={false} />
+        </label>
         <button type="submit" className="app-btn">アップロード</button>
       </form>
-      {result && <div className={`app-alert ${succeeded ? "warn" : ""}`}>{succeeded ? "危険なファイルが実行されました。" : "安全に処理されました。"}</div>}
+      {result && (
+        <div className={`app-alert ${succeeded ? "warn" : ""}`}>
+          {succeeded ? "危険なファイルが実行されました。" : "安全に処理されました。"}
+        </div>
+      )}
     </div>
   ),
 };

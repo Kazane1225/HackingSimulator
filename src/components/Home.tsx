@@ -1,4 +1,5 @@
-import { LABS } from "../labs";
+import { COVERAGE_LABEL, LEARNING_TRACKS, OWASP_TOP10_2021 } from "../curriculum";
+import { findLab, LABS } from "../labs";
 import { LEVELS } from "../labs/types";
 import type { Progress } from "../progress";
 import { Check, LabIcon, Reset, Shield } from "./icons";
@@ -8,8 +9,15 @@ interface Props {
   onReset: () => void;
 }
 
+function solvedLevels(progress: Progress, labId: string): number[] {
+  return progress[labId] ?? [];
+}
+
 export function Home({ progress, onReset }: Props) {
-  const anySolved = LABS.some((lab) => (progress[lab.meta.id] ?? []).length > 0);
+  const anySolved = LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
+  const covered = OWASP_TOP10_2021.filter((c) => c.coverage === "covered").length;
+  const adjacent = OWASP_TOP10_2021.filter((c) => c.coverage === "adjacent").length;
+  const missing = OWASP_TOP10_2021.filter((c) => c.coverage === "none").length;
 
   return (
     <div className="page">
@@ -17,7 +25,7 @@ export function Home({ progress, onReset }: Props) {
         <div>
           <h1>ダッシュボード</h1>
           <p className="page-lead">
-            Web の代表的な脆弱性を、攻撃者の視点で安全に体験する学習用シミュレータです。脆弱なサーバーはすべてブラウザ内で動作します。
+            Web の代表的な脆弱性を、攻撃者の視点で安全に体験する学習用シミュレータです。脆弱なサーバーはすべてブラウザ内で動作します。上から順に進めると、理解が積み上がります。
           </p>
         </div>
         <button className="btn" onClick={onReset} disabled={!anySolved}>
@@ -25,58 +33,104 @@ export function Home({ progress, onReset }: Props) {
         </button>
       </div>
 
-      <section className="pane">
+      <section className="pane" data-testid="owasp-map">
         <div className="pane-head">
-          <span className="pane-title">ラボ</span>
-          <span className="pane-meta">{LABS.length} 件</span>
+          <span className="pane-title">OWASP Top 10:2021</span>
+          <span className="pane-meta">
+            カバー {covered} / 隣接 {adjacent} / 未対応 {missing}
+          </span>
         </div>
-        <table className="lab-table">
-          <thead>
-            <tr>
-              <th>ラボ</th>
-              <th>分類</th>
-              <th>OWASP</th>
-              <th>目標</th>
-              {LEVELS.map((lv) => (
-                <th key={lv} className="lv-col">
-                  Lv{lv}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {LABS.map((lab) => {
-              const solved = progress[lab.meta.id] ?? [];
-              return (
-                <tr key={lab.meta.id} onClick={() => (window.location.hash = `#/lab/${lab.meta.id}`)}>
-                  <td>
-                    <a href={`#/lab/${lab.meta.id}`} className="lab-name">
-                      <LabIcon id={lab.meta.id} width={16} height={16} />
-                      {lab.meta.shortTitle}
-                    </a>
-                  </td>
-                  <td className="dim">{lab.meta.category}</td>
-                  <td className="mono dim" title={`OWASP Top 10:2021 ${lab.meta.standards.owasp.name}`}>
-                    {lab.meta.standards.owasp.code}
-                  </td>
-                  <td className="dim objective-cell">{lab.meta.objective}</td>
+        <div className="owasp-map">
+          {OWASP_TOP10_2021.map((cat) => {
+            const first = cat.labIds[0];
+            const inner = (
+              <>
+                <span className="owasp-code mono">{cat.code}</span>
+                <span className="owasp-name">{cat.name}</span>
+                <span className={`owasp-tag ${cat.coverage}`}>{COVERAGE_LABEL[cat.coverage]}</span>
+              </>
+            );
+            return first ? (
+              <a
+                key={cat.code}
+                href={`#/lab/${first}`}
+                className={`owasp-cell ${cat.coverage}`}
+                title={cat.note ?? cat.yearCode}
+              >
+                {inner}
+              </a>
+            ) : (
+              <div key={cat.code} className={`owasp-cell ${cat.coverage}`} title={cat.note ?? cat.yearCode}>
+                {inner}
+              </div>
+            );
+          })}
+        </div>
+        <p className="owasp-legend">
+          10 個のラボは A01 / A03 / A07 / A10 を厚く扱います。A04 はアップロードで隣接、A02・A05・A06・A08・A09 は未対応です。
+        </p>
+      </section>
+
+      {LEARNING_TRACKS.map((track) => {
+        const trackCleared = track.labIds.reduce((sum, id) => {
+          return sum + solvedLevels(progress, id).filter((lv) => lv <= 4).length;
+        }, 0);
+        return (
+          <section key={track.id} className="pane track-pane" data-testid={`track-${track.id}`}>
+            <div className="pane-head">
+              <span className="pane-title">
+                <span className="track-step mono">{track.step}</span>
+                {track.title}
+              </span>
+              <span className="pane-meta">
+                {track.summary} · {trackCleared}/{track.labIds.length * 4}
+              </span>
+            </div>
+            <table className="lab-table">
+              <thead>
+                <tr>
+                  <th>ラボ</th>
+                  <th>目標</th>
                   {LEVELS.map((lv) => (
-                    <td key={lv} className="lv-col">
-                      {lv === 5 ? (
-                        <Shield width={15} height={15} className="lv-impossible" aria-label="正しい実装（突破不可）" />
-                      ) : solved.includes(lv) ? (
-                        <Check width={15} height={15} className="lv-done" aria-label="クリア" />
-                      ) : (
-                        <span className="lv-todo" aria-label="未クリア" />
-                      )}
-                    </td>
+                    <th key={lv} className="lv-col">
+                      Lv{lv}
+                    </th>
                   ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+              </thead>
+              <tbody>
+                {track.labIds.map((id) => {
+                  const lab = findLab(id);
+                  if (!lab) return null;
+                  const solved = solvedLevels(progress, id);
+                  return (
+                    <tr key={id} onClick={() => (window.location.hash = `#/lab/${id}`)}>
+                      <td>
+                        <a href={`#/lab/${id}`} className="lab-name">
+                          <LabIcon id={id} width={16} height={16} />
+                          {lab.meta.shortTitle}
+                        </a>
+                      </td>
+                      <td className="dim objective-cell">{lab.meta.objective}</td>
+                      {LEVELS.map((lv) => (
+                        <td key={lv} className="lv-col">
+                          {lv === 5 ? (
+                            <Shield width={15} height={15} className="lv-impossible" aria-label="正しい実装（突破不可）" />
+                          ) : solved.includes(lv) ? (
+                            <Check width={15} height={15} className="lv-done" aria-label="クリア" />
+                          ) : (
+                            <span className="lv-todo" aria-label="未クリア" />
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
+        );
+      })}
 
       <div className="pane-row">
         <section className="pane">
@@ -84,11 +138,11 @@ export function Home({ progress, onReset }: Props) {
             <span className="pane-title">進め方</span>
           </div>
           <ol className="steps">
-            <li>ラボとレベルを選ぶ。Lv1〜4 は少しずつ強化される不完全な防御です。</li>
+            <li>上の推奨順でラボを選ぶ。Lv1〜4 は少しずつ強化される不完全な防御です。</li>
+            <li>標的アプリは普段の利用者として操作し、owner や role などの改ざんは Proxy で行います。</li>
             <li>「ソース」タブでサーバー側の処理を読み、防御の穴を探す。詰まったら「ヒント」を 1 段ずつ開く。</li>
-            <li>リクエストを組み立てて送信し、目標を達成する。</li>
             <li>
-              クリア後に解答と解説を読み、なぜ通ったのか・どう防ぐのかを確認する。分類（OWASP / CWE）と参考資料で深掘りし、わからない用語は
+              クリア後に解答と解説を読み、なぜ通ったのか・どう防ぐのかを確認する。わからない用語は
               <a href="#/glossary">用語集</a>で確認する。
             </li>
           </ol>

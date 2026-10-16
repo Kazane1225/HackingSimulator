@@ -6,13 +6,35 @@ const encode = (value: object) =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 
 test.describe("new vulnerability labs — target app", () => {
-  test("IDOR Lv1 exposes another user's order", async ({ page, lab }) => {
+  test("IDOR own order is a normal response", async ({ page, lab }) => {
     await lab.goto("idor");
     await lab.setIntercept(false);
-    await page.getByLabel("注文 ID").fill("1002");
-    await page.getByRole("button", { name: "注文を表示" }).click();
+    await page.getByRole("button", { name: "表示" }).click();
+    await expect(lab.statusBadge).toHaveText(STATUS.benign);
+    await expect(lab.pane("target").getByRole("cell", { name: "USB-C ケーブル" })).toBeVisible();
+    await expect(lab.pane("target").getByText(/Alice \/ 1001/)).toBeVisible();
+  });
+
+  test("IDOR Lv1 exposes another user's order", async ({ lab }) => {
+    await lab.goto("idor");
+    await lab.setIntercept(false);
+    await lab.send("orderId", "1002");
     await expect(lab.statusBadge).toHaveText(STATUS.success);
     await expect(lab.pane("target").getByText(/Bob .* ORD-B0B-42/)).toBeVisible();
+  });
+
+  test("authentication Lv2 distinguishes missing users from bad passwords", async ({ page, lab }) => {
+    await lab.goto("auth");
+    await lab.selectLevel(2);
+    await lab.setIntercept(false);
+    await page.getByLabel("ユーザー名").fill("nobody");
+    await page.getByLabel("パスワード").fill("x");
+    await page.getByRole("button", { name: "ログイン" }).click();
+    await expect(lab.pane("target").getByText("ユーザーが存在しません。")).toBeVisible();
+
+    await page.getByLabel("ユーザー名").fill("admin");
+    await page.getByRole("button", { name: "ログイン" }).click();
+    await expect(lab.pane("target").getByText("パスワードが違います。")).toBeVisible();
   });
 
   test("authentication Lv1 accepts a weak admin password", async ({ page, lab }) => {
@@ -29,10 +51,20 @@ test.describe("new vulnerability labs — target app", () => {
     await lab.goto("jwt");
     await lab.setIntercept(false);
     const token = `${encode({ alg: "none", typ: "JWT" })}.${encode({ sub: "attacker", role: "admin" })}.`;
-    await page.getByLabel("JWT").fill(token);
+    await page.getByLabel("raw JWT", { exact: true }).fill(token);
     await page.getByRole("button", { name: "GET /admin" }).click();
     await expect(lab.statusBadge).toHaveText(STATUS.success);
     await expect(lab.pane("target").getByText(/attacker \(admin\)/)).toBeVisible();
+  });
+
+  test("JWT editor assembles header and payload into a token", async ({ page, lab }) => {
+    await lab.goto("jwt");
+    await lab.setIntercept(false);
+    await page.getByLabel("JWT header", { exact: true }).fill(JSON.stringify({ alg: "none", typ: "JWT" }, null, 2));
+    await page.getByLabel("JWT payload", { exact: true }).fill(JSON.stringify({ sub: "attacker", role: "admin" }, null, 2));
+    await page.getByLabel("JWT signature", { exact: true }).fill("");
+    await page.getByRole("button", { name: "GET /admin" }).click();
+    await expect(lab.statusBadge).toHaveText(STATUS.success);
   });
 
   test("SSRF Lv1 reaches localhost", async ({ page, lab }) => {
@@ -48,7 +80,6 @@ test.describe("new vulnerability labs — target app", () => {
     await lab.goto("upload");
     await lab.setIntercept(false);
     await page.getByLabel("ファイル名").fill("shell.php");
-    await page.getByLabel("Content-Type").fill("application/x-httpd-php");
     await page.getByLabel("ファイル内容").fill("<?php system('id'); ?>");
     await page.getByRole("button", { name: "アップロード" }).click();
     await expect(lab.statusBadge).toHaveText(STATUS.success);
@@ -79,7 +110,7 @@ test.describe("new vulnerability labs — proxy exploits", () => {
 test.describe("new vulnerability labs — intercept", () => {
   test("IDOR: tampering with a held order id exposes Bob's order", async ({ page, lab }) => {
     await lab.goto("idor");
-    await page.getByRole("button", { name: "注文を表示" }).click();
+    await page.getByRole("button", { name: "表示" }).click();
     await expect(lab.statusBadge).toHaveText(STATUS.held);
 
     await lab.send("orderId", "1002");

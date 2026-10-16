@@ -2,44 +2,103 @@ import type { AttackResult, Lab, LabInput, Level, LevelSpec } from "./types";
 
 const BOB_ORDER = "ORD-B0B-42";
 
+interface Order {
+  id: string;
+  owner: string;
+  item: string;
+  price: string;
+}
+
+const ALICE: Order = {
+  id: "1001",
+  owner: "alice",
+  item: "USB-C ケーブル",
+  price: "¥2,480",
+};
+
+const BOB: Order = {
+  id: BOB_ORDER,
+  owner: "bob",
+  item: "法人向けセキュリティキー",
+  price: "¥89,800",
+};
+
+function format(order: Order): string {
+  const who = order.owner === "alice" ? "Alice" : "Bob";
+  return `[200 OK] ${who} / ${order.id} / ${order.item} / ${order.price}`;
+}
+
+function isAliceOrder(orderId: string, endpoint: string): boolean {
+  return orderId === ALICE.id && !endpoint.includes(BOB_ORDER);
+}
+
 function run(level: Level, input: LabInput): AttackResult {
   const orderId = (input.orderId ?? "").trim();
   const owner = (input.owner ?? "alice").trim();
   const role = (input.role ?? "user").trim().toLowerCase();
   const endpoint = (input.endpoint ?? "/api/orders").trim();
+
+  let shown: Order | null = null;
   let leaked = false;
-  let reason = "";
+  let reason = "注文が見つからないか、権限がありません。";
 
   if (level === 1) {
-    leaked = orderId === "1002";
-    reason = leaked ? "連番 ID だけで注文を取得しました。" : "注文が見つかりません。";
+    if (orderId === "1002" || orderId === BOB_ORDER) {
+      shown = BOB;
+      leaked = true;
+      reason = "連番 ID だけで注文を取得しました。";
+    } else if (isAliceOrder(orderId, endpoint)) {
+      shown = ALICE;
+      reason = "自分の注文を表示しました。";
+    }
   } else if (level === 2) {
-    leaked = orderId === BOB_ORDER && owner === "bob";
-    reason = leaked
-      ? "owner パラメータを信用して Bob の注文を取得しました。"
-      : "不正な注文 ID、または所有者です。";
+    if (orderId === BOB_ORDER && owner === "bob") {
+      shown = BOB;
+      leaked = true;
+      reason = "owner パラメータを信用して Bob の注文を取得しました。";
+    } else if (isAliceOrder(orderId, endpoint) && owner === "alice") {
+      shown = ALICE;
+      reason = "自分の注文を表示しました。";
+    } else {
+      reason = "不正な注文 ID、または所有者です。";
+    }
   } else if (level === 3) {
-    leaked = orderId === BOB_ORDER && role === "admin";
-    reason = leaked
-      ? "クライアント申告の role=admin を信用しました。"
-      : "管理者権限が必要です。";
+    if (orderId === BOB_ORDER && role === "admin") {
+      shown = BOB;
+      leaked = true;
+      reason = "クライアント申告の role=admin を信用しました。";
+    } else if (isAliceOrder(orderId, endpoint)) {
+      shown = ALICE;
+      reason = "自分の注文を表示しました。";
+    } else {
+      reason = "管理者権限が必要です。";
+    }
   } else if (level === 4) {
-    leaked = endpoint === `/api/v1/admin/orders/${BOB_ORDER}`;
-    reason = leaked
-      ? "旧管理 API に認可ミドルウェアがありません。"
-      : "この API では Alice 所有の注文だけ取得できます。";
+    if (endpoint === `/api/v1/admin/orders/${BOB_ORDER}`) {
+      shown = BOB;
+      leaked = true;
+      reason = "旧管理 API に認可ミドルウェアがありません。";
+    } else if (isAliceOrder(orderId, endpoint)) {
+      shown = ALICE;
+      reason = "自分の注文を表示しました。";
+    } else {
+      reason = "この API では Alice 所有の注文だけ取得できます。";
+    }
+  } else if (isAliceOrder(orderId, endpoint)) {
+    shown = ALICE;
+    reason = "自分の注文を表示しました。";
   } else {
     reason = "認証済みユーザー alice と注文の所有者が一致しないため拒否しました。";
   }
 
+  const path = endpoint.includes(BOB_ORDER) ? endpoint : `${endpoint}/${orderId}`;
   return {
     solved: leaked,
+    benign: !!shown && !leaked,
     output: [
-      `GET ${endpoint}${endpoint.includes(BOB_ORDER) ? "" : `/${orderId}`}`,
+      `GET ${path}`,
       `認証ユーザー: alice / owner=${owner} / role=${role}`,
-      leaked
-        ? "[200 OK] Bob / ORD-B0B-42 / 法人向けセキュリティキー / ¥89,800"
-        : `[403 FORBIDDEN] ${reason}`,
+      shown ? format(shown) : `[403 FORBIDDEN] ${reason}`,
     ],
     note: leaked ? "他人の注文情報へアクセスできました。" : reason,
   };
@@ -49,9 +108,9 @@ const levels: Record<Level, LevelSpec> = {
   1: {
     defense: "認証のみ。注文 ID とログインユーザーの所有関係を確認しない。",
     hints: [
-      "URL の注文番号は誰が決めていますか？",
+      "画面に出ているのは自分の注文だけです。URL の注文番号は誰が決めていますか？",
       "自分の注文 1001 の隣には、別ユーザーの注文がありそうです。",
-      "`orderId` を `1002` に書き換えて送信します。",
+      "Proxy で `orderId` を `1002` に書き換えて送信します。",
     ],
     solution: "Proxy で注文 ID を `1002` に変更すると、Bob の注文が表示されます。",
     code: `const order = db.orders.find(req.params.id);

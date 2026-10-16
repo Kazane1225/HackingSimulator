@@ -49,6 +49,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
   const executionJudged = result?.renderHtml !== undefined;
   const succeeded = !!result && (executionJudged ? fired !== null : result.solved);
+  const benign = !!result && !succeeded && !!result.benign;
 
   const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
 
@@ -100,9 +101,11 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
       ? { cls: "idle", label: "待機" }
       : succeeded
         ? { cls: "ok", label: "成功" }
-        : level === 5
-          ? { cls: "blocked", label: "防御済み" }
-          : { cls: "ng", label: "失敗" };
+        : benign
+          ? { cls: "benign", label: "通常応答" }
+          : level === 5
+            ? { cls: "blocked", label: "防御済み" }
+            : { cls: "ng", label: "失敗" };
 
   const inspectorTabs: { key: InspectorTab; label: string; locked?: boolean }[] = [
     { key: "hint", label: "ヒント" },
@@ -163,7 +166,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
       <div className={`workbench show-${mobileTab}`}>
         <section className="wb-target" data-testid="pane-target">
           <BrowserChrome url={ui.url} title={ui.site} onReload={clear}>
-            {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire })}
+            {ui.renderApp({ inputs, setField, submit: submitFromApp, result, succeeded, runId, onFire, level })}
           </BrowserChrome>
         </section>
 
