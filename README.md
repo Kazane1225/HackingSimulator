@@ -110,6 +110,7 @@ XSS ラボでは、入力したペイロードを `sandbox="allow-scripts"`（sa
 
 ## ラボを追加するには
 
-1. `src/labs/` に `Lab` 型（`src/labs/types.ts`）を満たすモジュールを作る
+1. `src/labs/` に `Lab` 型（`src/labs/types.ts`）を満たすモジュールを作る（Lv1〜4 の解法を `exploits` に含める）
 2. `src/labs/index.ts` の `LABS` に追加する
-3. `scripts/test-labs.ts` の `EXPLOITS` に Lv1〜4 の解法を追加し、`npm run test:labs` で確認する
+3. `src/components/labUI.tsx` の `LAB_UI` に、同じ id の画面定義を追加する
+4. `npm run test:labs` で確認する（`exploits` からレベル設計を自動検証し、`LAB_UI` の登録漏れも検出します）

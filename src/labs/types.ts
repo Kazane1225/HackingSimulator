@@ -70,4 +70,9 @@ export interface Lab {
   levels: Record<Level, LevelSpec>;
   /** Simulate the vulnerable backend at `level` for the given `input`. */
   run(level: Level, input: LabInput): AttackResult;
+  /**
+   * A reference exploit for each beatable level (Lv1-4). Used by
+   * `npm run test:labs` to verify the level design; never shown in the UI.
+   */
+  exploits: Record<1 | 2 | 3 | 4, LabInput>;
 }

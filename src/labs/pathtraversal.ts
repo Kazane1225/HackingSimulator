@@ -189,4 +189,10 @@ export const pathTraversalLab: Lab = {
 根本対策は Lv5 です。入力をデコード・正規化して「解決後の絶対パス」を求め、それが許可されたベースディレクトリ配下にあるかを検証します。パスの意味を OS と同じ基準で確定させてから判定するのが正解です。`,
   levels,
   run,
+  exploits: {
+    1: { name: "../../../etc/passwd" },
+    2: { name: "....//....//....//etc/passwd" },
+    3: { name: "..\\..\\..\\etc\\passwd" },
+    4: { name: "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd" },
+  },
 };

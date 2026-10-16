@@ -36,7 +36,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const solvedHere = isSolved(id, level);
   // Lv5 cannot be cleared; its write-up unlocks once Lv4 has been beaten.
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
-  const succeeded = !!result && (result.solved || fired !== null);
+  const executionJudged = result?.renderHtml !== undefined;
+  const succeeded = !!result && (executionJudged ? fired !== null : result.solved);
 
   const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
 
@@ -57,7 +58,9 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     setFired(null);
     setHeld(false);
     setRunId((n) => n + 1);
-    if (r.solved) markSolved(id, level);
+    // Labs that render markup are judged by real execution in the sandboxed
+    // iframe (see onFire), not by the heuristic in run().
+    if (r.solved && r.renderHtml === undefined) markSolved(id, level);
   };
 
   /** The target app was used normally: hold the request if intercepting. */

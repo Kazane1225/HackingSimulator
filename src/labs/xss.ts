@@ -89,7 +89,7 @@ function run(level: Level, input: LabInput): AttackResult {
       level === 5
         ? "すべての特殊文字がエンティティに変換され、ただのテキストとして表示されました。"
         : solved
-          ? "ペイロードがスクリプトとして注入されました。"
+          ? "実行可能なベクターが残っています。プレビューで実際に alert が発火するとクリアです。"
           : "注入は無害化されました。別のベクターを試しましょう。",
   };
 }
@@ -164,4 +164,10 @@ export const xssLab: Lab = {
 根本対策は Lv5 の出力エンコードです。表示するコンテキスト（HTML本文／属性値／JS／URL）に応じて特殊文字をエスケープすれば、入力は常に「データ」として表示され、スクリプトにはなりません。入力のブラックリストではなく、出力時のエンコード（およびテンプレートエンジンの自動エスケープや CSP）が正解です。`,
   levels,
   run,
+  exploits: {
+    1: { comment: "<script>alert(1)</script>" },
+    2: { comment: "<img src=x onerror=alert(1)>" },
+    3: { comment: "<details open ontoggle=alert(1)>" },
+    4: { comment: "<img src=x ononerrorerror=alert(1)>" },
+  },
 };

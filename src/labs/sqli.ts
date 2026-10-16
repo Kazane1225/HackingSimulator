@@ -349,4 +349,10 @@ export const sqliLab: Lab = {
 根本対策は Lv5 のプレースホルダ（準備済みステートメント）です。入力は必ず「値」としてバインドされ、クオートを含んでいてもクエリの構造は一切変わりません。入力のエスケープに頼るのではなく、構造とデータを分離するのが正解です。`,
   levels,
   run,
+  exploits: {
+    1: { username: "admin'-- ", password: "x" },
+    2: { username: "admin' OR '1'='1", password: "x" },
+    3: { username: "admin'||'1'='1", password: "x" },
+    4: { username: "admin' oorr '1'='1", password: "x" },
+  },
 };
