@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stand-in for ping. The lab network has no outbound access, so a real ICMP
+# echo could never succeed; this keeps the diagnostics tool's output stable
+# while the shell that runs it is real.
+host=
+for arg in "$@"; do host=$arg; done
+echo "PING $host: 56 data bytes"
+echo "64 bytes from $host: icmp_seq=0 ttl=57 time=11.4 ms"

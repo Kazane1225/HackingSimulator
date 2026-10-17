@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host --port 4173",
     "test:labs": "tsx scripts/test-labs.ts",
+    "test:real": "tsx scripts/test-real-labs.ts",
     "test:e2e": "playwright test",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
     "server:test": "npm --prefix server test",
