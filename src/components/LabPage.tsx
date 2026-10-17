@@ -1,7 +1,8 @@
-import { Fragment, useCallback, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
+import { runReal, useRealLabs } from "../realServer";
 import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LAB_UI } from "./labUI";
@@ -57,6 +58,12 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
   const [browserTab, setBrowserTab] = useState(browserTabs[0].id);
 
+  const realAvailable = useRealLabs().includes(id);
+  const [realMode, setRealMode] = useState(false);
+  const viaReal = realMode && realAvailable;
+  // Bumped whenever the pending result is no longer wanted (new request, level change, reset).
+  const requestSeq = useRef(0);
+
   const spec = lab.levels[level];
   const shownHints = Math.min(hintsShown[level] ?? 1, spec.hints.length);
   const solvedHere = isSolved(id, level);
@@ -70,6 +77,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
 
   const clear = () => {
+    requestSeq.current++;
     setResult(null);
     setFired(null);
     setHeld(false);
@@ -110,8 +118,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     setFocusField(name);
   };
 
-  const forward = (requestInputs: LabInput = inputs) => {
-    const r = lab.run(level, requestInputs);
+  const applyResult = (r: AttackResult, requestInputs: LabInput) => {
     setResult(r);
     setFired(null);
     setHeld(false);
@@ -126,6 +133,25 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     // Labs that render markup are judged by real execution in the sandboxed
     // iframe (see onFire), not by the heuristic in run().
     if (r.solved && r.renderHtml === undefined) markSolved(id, level);
+  };
+
+  const forward = (requestInputs: LabInput = inputs) => {
+    const seq = ++requestSeq.current;
+    if (!viaReal) {
+      applyResult(lab.run(level, requestInputs), requestInputs);
+      return;
+    }
+    runReal(id, level, requestInputs)
+      .catch(
+        (err: unknown): AttackResult => ({
+          solved: false,
+          output: [`実サーバーに接続できませんでした: ${err instanceof Error ? err.message : String(err)}`],
+          note: "実サーバーが起動しているか確認してください（docker compose -f docker-compose.real.yml up）。",
+        }),
+      )
+      .then((r) => {
+        if (seq === requestSeq.current) applyResult(r, requestInputs);
+      });
   };
 
   /** The target app was used normally: hold the request if intercepting. */
@@ -210,6 +236,32 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
       <div className="defense-bar">
         <span className="defense-tag mono">防御 Lv{level}</span>
         <span>{spec.defense}</span>
+        {realAvailable && (
+          <div className="segmented mode-switch" role="group" aria-label="標的の種類" data-testid="mode-switch">
+            <button
+              className={`seg ${!realMode ? "active" : ""}`}
+              aria-pressed={!realMode}
+              onClick={() => {
+                setRealMode(false);
+                clear();
+              }}
+              title="ブラウザ内の疑似サーバー"
+            >
+              シミュレート
+            </button>
+            <button
+              className={`seg ${realMode ? "active" : ""}`}
+              aria-pressed={realMode}
+              onClick={() => {
+                setRealMode(true);
+                clear();
+              }}
+              title="実際に動く脆弱なサーバー（隔離コンテナ）"
+            >
+              実サーバー
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mobile-tabs" role="tablist" aria-label="表示ペイン" data-testid="mobile-tabs">

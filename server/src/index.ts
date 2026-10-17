@@ -1,5 +1,7 @@
 import { createApp } from "./app.js";
+import { registerAllLabs } from "./labs/index.js";
 
+registerAllLabs();
 const port = Number(process.env.PORT ?? 3000);
 const server = createApp();
 

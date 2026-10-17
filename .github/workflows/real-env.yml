@@ -10,6 +10,7 @@ on:
       - "nginx.real.conf"
       - "Dockerfile"
       - ".github/workflows/real-env.yml"
+      - "src/realServer.ts"
 
 permissions:
   contents: read
@@ -38,6 +39,13 @@ jobs:
         run: |
           curl -fsS http://localhost:18080/ > /dev/null
           curl -fsS http://localhost:18080/api/healthz | grep '"ok"'
+          curl -fsS http://localhost:18080/api/info | grep '/sqli' | grep '/cmdi'
+      - name: Real labs are exploitable through the gateway
+        run: |
+          post() { curl -fsS -X POST -H 'Content-Type: application/json' -d "$2" "http://localhost:18080/api/$1/run"; }
+          post sqli '{"level":1,"input":{"username":"admin'"'"'-- ","password":"x"}}' | grep '"solved":true'
+          post cmdi '{"level":3,"input":{"host":"8.8.8.8 $(cat flag.txt)"}}' | grep '"solved":true'
+          post cmdi '{"level":5,"input":{"host":"8.8.8.8; cat flag.txt"}}' | grep '"solved":false'
       - name: Lab server is isolated
         run: |
           if docker compose -f docker-compose.real.yml exec -T lab-server wget -q -T 3 -O- http://example.com; then
