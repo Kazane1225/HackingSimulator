@@ -38,21 +38,40 @@ levelDesign(
     1: { endpoint: "/api/orders", orderId: "1002", owner: "alice", role: "user" },
     2: { endpoint: "/api/orders", orderId: BOB_ORDER, owner: "bob", role: "user" },
     3: { endpoint: "/api/export", orderId: BOB_ORDER, owner: "alice", role: "user" },
-    // Adapted from the simulated exploit: the real /graphql resolver only
-    // knows the id it is asked for through an actual parsed GraphQL query,
-    // so a `query` field replaces the bare `orderId` the mock keyed off.
-    4: {
-      endpoint: "/graphql",
-      orderId: BOB_ORDER,
-      owner: "alice",
-      role: "user",
-      query: `{ order(id: "${BOB_ORDER}") { id item price } }`,
-    },
+    // Identical to the simulated exploit: an empty query means the dev tab's
+    // default `order(id: <orderId>)` resolver call.
+    4: { endpoint: "/graphql", orderId: BOB_ORDER, owner: "alice", role: "user" },
   },
   { endpoint: "/api/orders", orderId: "1001", owner: "alice", role: "user", query: "" },
 );
 
 describe("idor (real engine behaviour)", () => {
+  const explicitQuery = { endpoint: "/graphql", owner: "alice", role: "user", query: `{ order(id: "${BOB_ORDER}") { id item price } }` };
+
+  it("an explicit GraphQL order(id:) query solves Lv4 through the real parser", async () => {
+    assert.equal((await idorRealLab.run(4, explicitQuery)).solved, true);
+  });
+
+  it("an explicit query's id wins over a differing orderId", async () => {
+    const r = await idorRealLab.run(4, { ...explicitQuery, orderId: "1001" });
+    assert.equal(r.solved, true);
+  });
+
+  it("Lv3 and Lv5 do not fall for the explicit GraphQL query", async () => {
+    assert.equal((await idorRealLab.run(3, explicitQuery)).solved, false);
+    assert.equal((await idorRealLab.run(5, explicitQuery)).solved, false);
+  });
+
+  it("an empty GraphQL query without orderId is unsupported, not a leak", async () => {
+    const r = await idorRealLab.run(4, { endpoint: "/graphql", query: "" });
+    assert.equal(r.solved, false);
+  });
+
+  it("a valid query with no order selection falls back to the default resolver", async () => {
+    const r = await idorRealLab.run(4, { endpoint: "/graphql", orderId: BOB_ORDER, query: "{ me { id } }" });
+    assert.equal(r.solved, true);
+  });
+
   it("reports a real GraphQL syntax error for a malformed query", async () => {
     const r = await idorRealLab.run(4, { endpoint: "/graphql", query: "{ order(id: ) }" });
     assert.equal(r.solved, false);
