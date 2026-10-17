@@ -67,7 +67,7 @@ export function Home({ progress, onReset }: Props) {
           })}
         </div>
         <p className="owasp-legend">
-          10 個のラボは A01 / A03 / A07 / A10 を厚く扱います。A04 はアップロードで隣接、A02・A05・A06・A08・A09 は未対応です。
+          15 個のラボで Top 10 を扱います。A04 は設計レビュー型ではなく、ファイルアップロードが隣接です。
         </p>
       </section>
 

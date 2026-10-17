@@ -30,6 +30,15 @@ const SQLI_ACCOUNTS = [
 const CMDI_FLAG = "FLAG{c0mmand_1nj3ct10n}";
 const PATH_FLAG = "FLAG{p4th_tr4v3rs4l}";
 const PASSWD_MARK = "root:x:0:0";
+const PAN = "4242424242424242";
+const MISCONF_FLAG = "FLAG{m1sc0nf1g}";
+const DEPS_FLAG = "FLAG{old_component}";
+const INTEGRITY_FLAG = "FLAG{uns1gn3d_upd4te}";
+const LOGGING_FLAG = "FLAG{l0g_1nj3ct}";
+
+function exactLine(body: string, line: string): boolean {
+  return body.split("\n").includes(line);
+}
 
 function form(fields: Record<string, string | undefined>): Pick<LabRequest, "headers" | "body"> {
   const params = new URLSearchParams();
@@ -91,6 +100,16 @@ export function buildLabRequest(labId: string, level: Level, input: LabInput): L
         path: `/upload${lv}/avatar`,
         ...multipart(input.filename ?? "upload.bin", input.contentType ?? "application/octet-stream", input.content ?? ""),
       };
+    case "crypto":
+      return post(`/crypto${lv}/open`, { action: input.action ?? "mine", token: input.token ?? "" });
+    case "misconf":
+      return { method: "GET", path: `/misconf${lv}/page?path=${encodeURIComponent(input.path ?? "/")}`, headers: {} };
+    case "deps":
+      return post(`/deps${lv}/thumb`, { file: input.file ?? "logo.png", engine: input.engine ?? "current" });
+    case "integrity":
+      return post(`/integrity${lv}/apply`, { manifest: input.manifest ?? "", signature: input.signature ?? "" });
+    case "logging":
+      return post(`/logging${lv}/act`, { user: input.user ?? "", action: input.action ?? "view", op: input.op ?? "" });
     case "jwt":
       return {
         method: "GET",
@@ -343,6 +362,61 @@ export function judgeLabResponse(labId: string, level: Level, input: LabInput, r
       solved,
       output,
       note: solved ? "アップロードした内容がサーバー側コードとして実行されました。" : "保存された内容は実行されません。",
+    };
+  }
+
+  if (labId === "crypto") {
+    const solved = exactLine(res.body, `card=${PAN}`);
+    return {
+      solved,
+      output,
+      benign: !solved && res.body.includes("************4242"),
+      loot: solved ? [{ id: "crypto-pan", label: "カード番号", value: PAN }] : undefined,
+      note: solved ? "弱い暗号（または符号化）が解け、カード番号が出ました。" : "このトークンはこのレベルの方式では開きません。",
+    };
+  }
+
+  if (labId === "misconf") {
+    const solved = exactLine(res.body, MISCONF_FLAG);
+    return {
+      solved,
+      output,
+      benign: !solved && res.body.includes("Welcome"),
+      loot: solved ? [{ id: "misconf-flag", label: "設定の秘密", value: MISCONF_FLAG }] : undefined,
+      note: solved ? "本番に残った入口から設定の秘密が返りました。" : "そのパスは秘密を返しません。",
+    };
+  }
+
+  if (labId === "deps") {
+    const solved = exactLine(res.body, DEPS_FLAG);
+    return {
+      solved,
+      output,
+      benign: !solved && res.body.includes("PNG logo"),
+      loot: solved ? [{ id: "deps-flag", label: "コンポーネントの秘密", value: DEPS_FLAG }] : undefined,
+      note: solved ? "古いコンポーネントの解釈で秘密ファイルが返りました。" : "そのファイルは返していません。",
+    };
+  }
+
+  if (labId === "integrity") {
+    const solved = exactLine(res.body, INTEGRITY_FLAG);
+    return {
+      solved,
+      output,
+      benign: !solved && exactLine(res.body, "role=user"),
+      loot: solved ? [{ id: "integrity-flag", label: "適用された更新", value: INTEGRITY_FLAG }] : undefined,
+      note: solved ? "role=admin の更新を受け入れました。" : "admin としての更新は適用されていません。",
+    };
+  }
+
+  if (labId === "logging") {
+    const solved = header(res, "x-export") === "accepted";
+    return {
+      solved,
+      output,
+      benign: !solved && (res.body.includes("action=view") || res.body.includes('"action":"view"')),
+      loot: solved ? [{ id: "logging-flag", label: "記録の穴", value: LOGGING_FLAG }] : undefined,
+      note: solved ? "監視が見る記録と、実際の操作がずれました。" : "監視は実行した操作をそのまま見ています。",
     };
   }
 

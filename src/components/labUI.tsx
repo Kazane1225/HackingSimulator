@@ -774,6 +774,130 @@ const upload: LabUI = {
   ),
 };
 
+const crypto: LabUI = {
+  url: "https://vault.example/cards",
+  site: "Card Vault",
+  request: (i) => [
+    "POST /api/open HTTP/1.1",
+    "Host: vault.example",
+    "Content-Type: application/x-www-form-urlencoded",
+    "",
+    `action=${i.action ?? "mine"}${i.token ? `&token=${i.token}` : ""}`,
+  ],
+  renderApp: ({ submit, result, succeeded }) => (
+    <div className="app-screen">
+      <div className="app-brand">Card Vault</div>
+      <h2 className="app-h">カード保管庫</h2>
+      <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <button type="submit" className="app-btn">表示</button>
+      </form>
+      {succeeded && <div className="app-badge ok">カード番号を復元</div>}
+      {result && <pre className="mono">{result.output.join("\n")}</pre>}
+    </div>
+  ),
+};
+
+const misconf: LabUI = {
+  url: "https://app.example/",
+  site: "Production App",
+  request: (i) => ["GET " + (i.path || "/") + " HTTP/1.1", "Host: app.example", ""],
+  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
+    <div className="app-screen">
+      <div className="app-brand">Production</div>
+      <h2 className="app-h">公開ページ</h2>
+      <form className="app-form row" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <input className="mono" aria-label="path" value={inputs.path ?? "/"} onChange={(e) => setField("path", e.target.value)} />
+        <button type="submit" className="app-btn">開く</button>
+      </form>
+      {succeeded && <div className="app-badge ok">設定が見えています</div>}
+      {result && <pre className="mono">{result.output.join("\n")}</pre>}
+    </div>
+  ),
+};
+
+const deps: LabUI = {
+  url: "https://photos.example/thumb",
+  site: "Photo Thumb",
+  request: (i) => [
+    "POST /thumb HTTP/1.1",
+    "Host: photos.example",
+    "Content-Type: application/x-www-form-urlencoded",
+    "",
+    `file=${i.file ?? "logo.png"}${i.engine ? `&engine=${i.engine}` : ""}`,
+  ],
+  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
+    <div className="app-screen">
+      <div className="app-brand">ThumbX</div>
+      <h2 className="app-h">サムネイル</h2>
+      <form className="app-form row" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <input className="mono" aria-label="file" value={inputs.file ?? "logo.png"} onChange={(e) => setField("file", e.target.value)} />
+        <button type="submit" className="app-btn">生成</button>
+      </form>
+      {succeeded && <div className="app-badge ok">秘密ファイル</div>}
+      {result && <pre className="mono">{result.output.join("\n")}</pre>}
+    </div>
+  ),
+};
+
+const integrity: LabUI = {
+  url: "https://updates.example/apply",
+  site: "App Updates",
+  request: (i) => [
+    "POST /apply HTTP/1.1",
+    "Host: updates.example",
+    "Content-Type: application/x-www-form-urlencoded",
+    "",
+    `manifest=${i.manifest ?? ""}&signature=${i.signature ?? ""}`,
+  ],
+  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
+    <div className="app-screen">
+      <div className="app-brand">Updates</div>
+      <h2 className="app-h">更新の適用</h2>
+      <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <label>
+          manifest
+          <textarea className="mono" rows={4} aria-label="manifest" value={inputs.manifest ?? ""} onChange={(e) => setField("manifest", e.target.value)} spellCheck={false} />
+        </label>
+        <button type="submit" className="app-btn">適用</button>
+      </form>
+      {succeeded && <div className="app-badge ok">admin として適用</div>}
+      {result && <pre className="mono">{result.output.join("\n")}</pre>}
+    </div>
+  ),
+};
+
+const logging: LabUI = {
+  url: "https://audit.example/act",
+  site: "Audit Log",
+  request: (i) => [
+    "POST /act HTTP/1.1",
+    "Host: audit.example",
+    "Content-Type: application/x-www-form-urlencoded",
+    "",
+    `user=${i.user ?? ""}&action=${i.action ?? "view"}${i.op ? `&op=${i.op}` : ""}`,
+  ],
+  renderApp: ({ inputs, setField, submit, result, succeeded }) => (
+    <div className="app-screen">
+      <div className="app-brand">Audit</div>
+      <h2 className="app-h">操作ログ</h2>
+      <p className="app-p">ログイン中: guest</p>
+      <form className="app-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <label>
+          メモ
+          <input className="mono" aria-label="メモ" value={inputs.user ?? ""} onChange={(e) => setField("user", e.target.value)} />
+        </label>
+        <label>
+          action
+          <input className="mono" aria-label="action" value={inputs.action ?? "view"} onChange={(e) => setField("action", e.target.value)} />
+        </label>
+        <button type="submit" className="app-btn">記録</button>
+      </form>
+      {succeeded && <div className="app-badge ok">監視と操作がずれました</div>}
+      {result && <pre className="mono">{result.output.join("\n")}</pre>}
+    </div>
+  ),
+};
+
 export const LAB_UI: Record<string, LabUI> = {
   sqli,
   xss,
@@ -785,4 +909,9 @@ export const LAB_UI: Record<string, LabUI> = {
   jwt,
   ssrf,
   upload,
+  crypto,
+  misconf,
+  deps,
+  integrity,
+  logging,
 };

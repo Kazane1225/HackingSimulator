@@ -289,4 +289,34 @@ export const GLOSSARY: GlossaryTerm[] = [
     aliases: ["Common Weakness Enumeration"],
     description: "ソフトウェアの弱点（脆弱性の原因）を種類別に番号付けした一覧。例: CWE-89 は SQL インジェクション。",
   },
+  {
+    term: "符号化と暗号化",
+    aliases: ["Base64", "encoding"],
+    description: "Base64 は誰でも戻せます。固定の XOR や、ソースに書いた鍵も秘密ではありません。カード番号のような秘密は、認証付き暗号とアプリの外にある鍵で守ります。",
+    labs: ["crypto"],
+  },
+  {
+    term: "セキュリティ設定ミス",
+    aliases: ["misconfiguration", "デバッグ", "Actuator"],
+    description: "本番でデバッグや管理エンドポイントを有効にしたままにする、秘密ファイルを公開ディレクトリに含める、といった止め忘れです。",
+    labs: ["misconf"],
+  },
+  {
+    term: "脆弱なコンポーネント",
+    aliases: ["outdated component", "依存関係"],
+    description: "アプリ本体を直しても、古いライブラリが入力を別の規則で解釈すると穴が残ります。古い入口を消し、渡す値をファイル名だけに限定します。",
+    labs: ["deps"],
+  },
+  {
+    term: "完全性",
+    aliases: ["integrity", "署名", "HMAC"],
+    description: "データが改ざんされていないことの確認です。鍵のないハッシュや、署名対象の外にある項目は、書き換えた側が通ります。",
+    labs: ["integrity"],
+  },
+  {
+    term: "ログインジェクション",
+    aliases: ["log injection", "ログ注入"],
+    description: "改行や引用符をログへそのまま書くと、監視が読むイベントを偽れます。記録は実行した操作そのものにし、制御文字はエスケープします。",
+    labs: ["logging"],
+  },
 ];

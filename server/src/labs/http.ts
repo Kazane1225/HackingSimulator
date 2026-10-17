@@ -2,9 +2,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { registerLab } from "../app.js";
 import { authRealLab } from "./auth.js";
 import { cmdiRealLab } from "./cmdi.js";
+import { cryptoRealLab } from "./crypto.js";
 import { csrfRealLab } from "./csrf.js";
+import { depsRealLab } from "./deps.js";
 import { idorRealLab } from "./idor.js";
+import { integrityRealLab } from "./integrity.js";
 import { jwtRealLab } from "./jwt.js";
+import { loggingRealLab } from "./logging.js";
+import { misconfRealLab } from "./misconf.js";
 import { pathtraversalRealLab } from "./pathtraversal.js";
 import type { AttackResult, LabInput, Level, RealLab } from "./runner.js";
 import { sqliRealLab } from "./sqli.js";
@@ -29,6 +34,11 @@ import { xssRealLab } from "./xss.js";
  *   GET  /jwt/lvN/admin
  *   POST /ssrf/lvN/fetch
  *   POST /upload/lvN/avatar
+ *   POST /crypto/lvN/open
+ *   GET  /misconf/lvN/page?path=
+ *   POST /deps/lvN/thumb
+ *   POST /integrity/lvN/apply
+ *   POST /logging/lvN/act
  */
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -169,6 +179,12 @@ function present(id: string, result: AttackResult): AppHttp {
     if (/not found|ENOENT/i.test(body)) return text(404, body);
     return text(200, body);
   }
+  if (id === "misconf") return text(body.split("\n").includes("404") ? 404 : 200, body);
+  if (id === "logging") {
+    const headers: Record<string, string> = {};
+    if (result.solved) headers["X-Export"] = "accepted";
+    return text(200, body, headers);
+  }
   return text(200, body);
 }
 
@@ -256,6 +272,36 @@ async function dispatch(lab: RealLab, hit: Hit): Promise<AppHttp> {
     return present(id, await lab.run(level, await readUpload(req)));
   }
 
+  if (id === "crypto") {
+    requireMethod(req, "POST");
+    if (rest !== "/open") return text(404, "not found");
+    return present(id, await lab.run(level, await readForm(req)));
+  }
+
+  if (id === "misconf") {
+    requireMethod(req, "GET");
+    if (rest !== "/page") return text(404, "not found");
+    return present(id, await lab.run(level, { path: url.searchParams.get("path") ?? "/" }));
+  }
+
+  if (id === "deps") {
+    requireMethod(req, "POST");
+    if (rest !== "/thumb") return text(404, "not found");
+    return present(id, await lab.run(level, await readForm(req)));
+  }
+
+  if (id === "integrity") {
+    requireMethod(req, "POST");
+    if (rest !== "/apply") return text(404, "not found");
+    return present(id, await lab.run(level, await readForm(req)));
+  }
+
+  if (id === "logging") {
+    requireMethod(req, "POST");
+    if (rest !== "/act") return text(404, "not found");
+    return present(id, await lab.run(level, await readForm(req)));
+  }
+
   return text(404, "not found");
 }
 
@@ -302,6 +348,11 @@ const TARGETS: RealLab[] = [
   jwtRealLab,
   ssrfRealLab,
   uploadRealLab,
+  cryptoRealLab,
+  misconfRealLab,
+  depsRealLab,
+  integrityRealLab,
+  loggingRealLab,
 ];
 
 export function registerHttpLabs(): void {

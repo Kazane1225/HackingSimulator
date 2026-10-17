@@ -1,0 +1,2 @@
+debug=true
+FLAG{m1sc0nf1g}

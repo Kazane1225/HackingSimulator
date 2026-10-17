@@ -50,7 +50,7 @@ jobs:
           curl -fsS http://localhost:18080/ > /dev/null
           curl -fsS http://localhost:18080/api/healthz | grep '"ok"'
           curl -fsS http://localhost:18080/api/info | grep '/sqli' | grep '/cmdi'
-          for lab in sqli xss cmdi path csrf idor auth jwt ssrf upload; do
+          for lab in sqli xss cmdi path csrf idor auth jwt ssrf upload crypto misconf deps integrity logging; do
             curl -fsS http://localhost:18080/api/info | grep "\"/$lab\"" > /dev/null || { echo "missing real lab: $lab"; exit 1; }
           done
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"level":1,"input":{}}' http://localhost:18080/api/sqli/run)
