@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { AttackResult, LabInput, Level } from "./labs/types";
 
 // Relative on purpose: the app is served from sub-paths (GitHub Pages) as well
 // as from the gateway, which proxies /api/ to the isolated lab server.
@@ -36,13 +35,3 @@ export function useRealLabs(): string[] {
   return labs;
 }
 
-/** Run one attack attempt against the real lab server. */
-export async function runReal(labId: string, level: Level, input: LabInput): Promise<AttackResult> {
-  const res = await fetch(`${API}/${labId}/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ level, input }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as AttackResult;
-}

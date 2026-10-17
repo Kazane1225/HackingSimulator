@@ -58,7 +58,7 @@ function render(level: Level, comment: string): string {
  * For the Lv4 script wrapper, only markup *after* the first `</script>` counts
  * — that is what the HTML parser would actually render.
  */
-function hasActiveVector(html: string): boolean {
+export function htmlFires(html: string): boolean {
   let scan = html;
   if (html.includes("<script>var comment")) {
     const end = html.toLowerCase().indexOf("</script>");
@@ -78,7 +78,7 @@ function hasActiveVector(html: string): boolean {
 function run(level: Level, input: LabInput): AttackResult {
   const comment = input.comment ?? "";
   const renderHtml = render(level, comment);
-  const solved = hasActiveVector(renderHtml);
+  const solved = htmlFires(renderHtml);
 
   const output: string[] = [];
   output.push("-- サーバーが生成した HTML（コメント部分）");

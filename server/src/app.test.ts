@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
-import { createApp, registerLab } from "./app.js";
+import { createApp, registerLab, resetLabs } from "./app.js";
 
 describe("hacklab-server", () => {
   const server = createApp();
   let base = "";
 
   before(async () => {
+    resetLabs();
     registerLab("/example", (_req, res) => {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("example lab");

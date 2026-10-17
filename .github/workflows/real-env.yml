@@ -11,6 +11,7 @@ on:
       - "Dockerfile"
       - ".github/workflows/real-env.yml"
       - "src/realServer.ts"
+      - "src/realHttp.ts"
       - "src/labs/**"
       - "scripts/test-real-labs.ts"
 
@@ -51,14 +52,20 @@ jobs:
           curl -fsS http://localhost:18080/api/info | grep '/sqli' | grep '/cmdi'
           for lab in sqli xss cmdi path csrf idor auth jwt ssrf upload; do
             curl -fsS http://localhost:18080/api/info | grep "\"/$lab\"" > /dev/null || { echo "missing real lab: $lab"; exit 1; }
-            curl -fsS -X POST -H 'Content-Type: application/json' -d '{"level":5,"input":{}}' "http://localhost:18080/api/$lab/run" > /dev/null || { echo "$lab run failed"; exit 1; }
           done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"level":1,"input":{}}' http://localhost:18080/api/sqli/run)
+          test "$code" = "404"
       - name: Real labs are exploitable through the gateway
         run: |
-          post() { curl -fsS -X POST -H 'Content-Type: application/json' -d "$2" "http://localhost:18080/api/$1/run"; }
-          post sqli '{"level":1,"input":{"username":"admin'"'"'-- ","password":"x"}}' | grep '"solved":true'
-          post cmdi '{"level":3,"input":{"host":"8.8.8.8 $(cat flag.txt)"}}' | grep '"solved":true'
-          post cmdi '{"level":5,"input":{"host":"8.8.8.8; cat flag.txt"}}' | grep '"solved":false'
+          curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "username=admin'-- " --data-urlencode "password=x" \
+            http://localhost:18080/api/sqli/lv1/login | grep 'administrator'
+          curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode 'host=8.8.8.8 $(cat flag.txt)' \
+            http://localhost:18080/api/cmdi/lv3/ping | grep 'FLAG{c0mmand_1nj3ct10n}'
+          curl -fsS -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode 'host=8.8.8.8; cat flag.txt' \
+            http://localhost:18080/api/cmdi/lv5/ping | grep 'reject'
       - name: Lab server is isolated
         run: |
           if docker compose -f docker-compose.real.yml exec -T lab-server wget -q -T 3 -O- http://example.com; then
