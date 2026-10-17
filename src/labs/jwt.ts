@@ -111,8 +111,17 @@ function verifyHs256(head: string, body: string, signature: string, secret: stri
   return signature.length > 0 && hmacSha256Base64Url(`${head}.${body}`, secret) === signature;
 }
 
-/** Simulated RSA public key material. Lv3 treats this string as an HMAC secret. */
-const RSA_PUBLIC = "hacklab-rsa-public";
+/** Lab RSA public key (a public fixture; the real lab server publishes the same PEM). Lv3 treats it as an HMAC secret. */
+const RSA_PUBLIC = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA35B5W7e7TIIXNiguR87u
+hhTVS8SzHWaGz7onGWyFBXtFr087gv/OMNpoLC/JXSU3kNwmuznpATaFFCeQokiF
+paOtnajGB5xxfT/IL6x/GrUX5PP3eE2OkvPVwJCgvp20kXoAVaSXSkPPKFwbem1R
+EpRGKP2+Jf4hBN8yXoUtPEoGTORQ+aQQArunFnWNKFuhcmoDaPGu/i9i6GORZ9Qu
+Ur625rG9wbkgcoia39MXi56PYowUR9CjdfdjEVH0PGj/VdZ2oQWapRqZWLEsLDCr
+nIrT+F/efOvpZ/hDIUEsxjA8S2EU0tSkBarJSXRCHh9+UVH2UsYLQceDBi9L+Kez
+XwIDAQAB
+-----END PUBLIC KEY-----
+`;
 const HS_SECRET = "secret";
 const ATTACKER_JKU = "https://evil.example/jwks.json";
 const ATTACKER_HMAC = "evil-hmac-key";
@@ -185,6 +194,7 @@ function run(level: Level, input: LabInput): AttackResult {
         `header : ${JSON.stringify(header)}`,
         `payload: ${JSON.stringify(payload)}`,
         ...(jwksLine ? [jwksLine] : []),
+        ...(level >= 3 ? ["GET /.well-known/jwks-public.pem", RSA_PUBLIC.trimEnd()] : []),
         accepted
           ? `[200 OK] /admin — ${String(payload.sub)} (admin)`
           : isAliceUser
@@ -244,7 +254,7 @@ if (header.alg === "none") return decode(token.payload); // 禁止すべき`,
     hints: [
       "弱い鍵 `secret` では HMAC が一致しません。ソースは公開鍵で検証しています。",
       "ライブラリが alg をトークンから読むと、非対称の公開鍵を HMAC の秘密に使えませんか？",
-      "alg を HS256 にし、「HS256 で署名」の鍵に公開鍵文字列 `hacklab-rsa-public` を入れます。",
+      "alg を HS256 にし、「HS256 で署名」の鍵に公開鍵の PEM 文字列（`-----BEGIN PUBLIC KEY-----` から末尾の改行まで）を入れます。公開鍵は Lv3 以上の応答に表示されます。",
     ],
     solution: `公開鍵を HMAC 秘密にしたトークン:\n\`${CONFUSION_TOKEN}\``,
     code: `const key = fs.readFileSync("public.pem"); // RSA 公開鍵

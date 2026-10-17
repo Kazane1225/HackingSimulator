@@ -1,4 +1,3 @@
-import vm from "node:vm";
 import type { AttackResult, LabInput, Level, RealLab } from "./runner.js";
 
 /**
@@ -9,11 +8,10 @@ import type { AttackResult, LabInput, Level, RealLab } from "./runner.js";
  * truth). To decide `solved` here too (for automated tests, which have no
  * DOM), the produced markup is tokenized with a small HTML5-style tokenizer
  * (correct quoted/unquoted attribute parsing, and the spec's "raw text"
- * `<script>` content rule), and any `<script>` content that survives is
- * actually executed with `node:vm` against `alert`/`confirm`/`prompt` stubs —
- * real V8 execution, not a string match. Event-handler attributes (`onerror`,
- * …) are detected structurally from the tokenizer output, since firing a real
- * DOM event would need an actual browser.
+ * `<script>` content rule). Surviving `<script>` content is checked for
+ * alert/confirm/prompt calls outside string literals, and event-handler
+ * attributes (`onerror`, …) are detected structurally from the tokenizer
+ * output. Submitted script is never executed on the server.
  */
 
 function htmlEncode(s: string): string {
@@ -176,31 +174,28 @@ function parseHtml(html: string): ParseResult {
   return { elements, scripts };
 }
 
-/** Really execute script content against alert/confirm/prompt stubs. */
-function scriptFires(code: string): boolean {
-  if (code.trim() === "") return false;
-  let fired = false;
-  const sandbox: Record<string, unknown> = {
-    alert: () => {
-      fired = true;
-    },
-    confirm: () => {
-      fired = true;
-      return true;
-    },
-    prompt: () => {
-      fired = true;
-      return "";
-    },
-  };
-  try {
-    const context = vm.createContext(sandbox);
-    vm.runInContext(code, context, { timeout: 100 });
-  } catch {
-    // A real browser would also fail to run broken/timed-out script - that
-    // is a non-fire, not a crash of the lab.
+/** Drops JS string literals so `var c = 'alert(1)'` is not mistaken for a call. */
+function stripStringLiterals(code: string): string {
+  let out = "";
+  let quote = "";
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = "";
+    } else if (c === "'" || c === '"' || c === "`") {
+      quote = c;
+    } else {
+      out += c;
+    }
   }
-  return fired;
+  return out;
+}
+
+// The server never executes submitted script: node:vm is not a security
+// boundary. The browser iframe remains the source of truth for execution.
+function scriptFires(code: string): boolean {
+  return /\b(alert|confirm|prompt)\s*\(/.test(stripStringLiterals(code));
 }
 
 const EVENT_HANDLER_ATTR = /^on[a-z]+$/;

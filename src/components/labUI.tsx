@@ -567,13 +567,15 @@ function JwtApp({ inputs, setField, submit, result, succeeded }: AppCtx) {
       </label>
       <label className="app-field">
         HMAC 秘密鍵
-        <input
+        <textarea
           className="mono"
+          rows={2}
           aria-label="HMAC secret"
           value={hmacSecret}
           onChange={(e) => setHmacSecret(e.target.value)}
-          placeholder="HS256 で署名する鍵"
+          placeholder="HS256 で署名する鍵（PEM のような複数行も可）"
           autoComplete="off"
+          spellCheck={false}
         />
       </label>
       <label className="app-field">

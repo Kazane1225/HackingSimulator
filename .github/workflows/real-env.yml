@@ -11,6 +11,8 @@ on:
       - "Dockerfile"
       - ".github/workflows/real-env.yml"
       - "src/realServer.ts"
+      - "src/labs/**"
+      - "scripts/test-real-labs.ts"
 
 permissions:
   contents: read
@@ -34,12 +36,23 @@ jobs:
       HACKLAB_PORT: "18080"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: docker compose -f docker-compose.real.yml up -d --build --wait
+      - name: Every real lab agrees with the reference exploits
+        run: HACKLAB_URL=http://localhost:18080 npm run test:real
       - name: Gateway serves the app and proxies /api/
         run: |
           curl -fsS http://localhost:18080/ > /dev/null
           curl -fsS http://localhost:18080/api/healthz | grep '"ok"'
           curl -fsS http://localhost:18080/api/info | grep '/sqli' | grep '/cmdi'
+          for lab in sqli xss cmdi path csrf idor auth jwt ssrf upload; do
+            curl -fsS http://localhost:18080/api/info | grep "\"/$lab\"" > /dev/null || { echo "missing real lab: $lab"; exit 1; }
+            curl -fsS -X POST -H 'Content-Type: application/json' -d '{"level":5,"input":{}}' "http://localhost:18080/api/$lab/run" > /dev/null || { echo "$lab run failed"; exit 1; }
+          done
       - name: Real labs are exploitable through the gateway
         run: |
           post() { curl -fsS -X POST -H 'Content-Type: application/json' -d "$2" "http://localhost:18080/api/$1/run"; }
