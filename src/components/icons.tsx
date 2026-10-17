@@ -133,6 +133,11 @@ const LAB_ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   jwt: Token,
   ssrf: Server,
   upload: UploadFile,
+  crypto: Key,
+  misconf: Shield,
+  deps: Folder,
+  integrity: Token,
+  logging: Terminal,
 };
 
 export function LabIcon({ id, ...props }: { id: string } & IconProps) {

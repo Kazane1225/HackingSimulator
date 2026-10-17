@@ -49,6 +49,13 @@ export const LEARNING_TRACKS: LearningTrack[] = [
     summary: "サーバーが出してよい宛先と受け取ってよい内容",
     labIds: ["ssrf", "upload"],
   },
+  {
+    id: "trust",
+    step: 5,
+    title: "暗号・設定・記録",
+    summary: "弱い暗号、止め忘れ、古い部品、署名、ログ",
+    labIds: ["crypto", "misconf", "deps", "integrity", "logging"],
+  },
 ];
 
 export const OWASP_TOP10_2021: OwaspCategory[] = [
@@ -63,9 +70,8 @@ export const OWASP_TOP10_2021: OwaspCategory[] = [
     code: "A02",
     yearCode: "A02:2021",
     name: "Cryptographic Failures",
-    coverage: "none",
-    labIds: [],
-    note: "専用ラボなし。JWT ラボは署名検証が隣接",
+    coverage: "covered",
+    labIds: ["crypto"],
   },
   {
     code: "A03",
@@ -86,15 +92,15 @@ export const OWASP_TOP10_2021: OwaspCategory[] = [
     code: "A05",
     yearCode: "A05:2021",
     name: "Security Misconfiguration",
-    coverage: "none",
-    labIds: [],
+    coverage: "covered",
+    labIds: ["misconf"],
   },
   {
     code: "A06",
     yearCode: "A06:2021",
     name: "Vulnerable and Outdated Components",
-    coverage: "none",
-    labIds: [],
+    coverage: "covered",
+    labIds: ["deps"],
   },
   {
     code: "A07",
@@ -107,15 +113,15 @@ export const OWASP_TOP10_2021: OwaspCategory[] = [
     code: "A08",
     yearCode: "A08:2021",
     name: "Software and Data Integrity Failures",
-    coverage: "none",
-    labIds: [],
+    coverage: "covered",
+    labIds: ["integrity"],
   },
   {
     code: "A09",
     yearCode: "A09:2021",
     name: "Security Logging and Monitoring Failures",
-    coverage: "none",
-    labIds: [],
+    coverage: "covered",
+    labIds: ["logging"],
   },
   {
     code: "A10",

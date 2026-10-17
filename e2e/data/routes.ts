@@ -11,5 +11,10 @@ export const ROUTES: { name: string; path: string }[] = [
   { name: "jwt lab", path: "/#/lab/jwt" },
   { name: "ssrf lab", path: "/#/lab/ssrf" },
   { name: "file upload lab", path: "/#/lab/upload" },
+  { name: "crypto lab", path: "/#/lab/crypto" },
+  { name: "misconfiguration lab", path: "/#/lab/misconf" },
+  { name: "outdated component lab", path: "/#/lab/deps" },
+  { name: "integrity lab", path: "/#/lab/integrity" },
+  { name: "logging lab", path: "/#/lab/logging" },
   { name: "glossary", path: "/#/glossary" },
 ];

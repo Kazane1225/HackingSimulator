@@ -42,4 +42,9 @@ export const LAB_TITLES: Record<string, string> = {
   jwt: "JWT",
   ssrf: "SSRF",
   upload: "Upload",
+  crypto: "暗号の失敗",
+  misconf: "設定ミス",
+  deps: "古いコンポーネント",
+  integrity: "署名なし更新",
+  logging: "ログの穴",
 };
