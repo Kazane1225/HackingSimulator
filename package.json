@@ -10,7 +10,10 @@
     "preview": "vite preview --host --port 4173",
     "test:labs": "tsx scripts/test-labs.ts",
     "test:e2e": "playwright test",
-    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json"
+    "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
+    "server:test": "npm --prefix server test",
+    "real:up": "docker compose -f docker-compose.real.yml up -d --build",
+    "real:down": "docker compose -f docker-compose.real.yml down"
   },
   "dependencies": {
     "react": "^18.3.1",

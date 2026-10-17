@@ -1,0 +1,52 @@
+name: Real environment
+
+# Builds the real-server stack, checks it end to end through the gateway, and
+# verifies the lab server's isolation guarantees.
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "docker-compose.real.yml"
+      - "nginx.real.conf"
+      - "Dockerfile"
+      - ".github/workflows/real-env.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm --prefix server ci
+      - run: npm --prefix server test
+
+  stack:
+    runs-on: ubuntu-latest
+    env:
+      HACKLAB_PORT: "18080"
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.real.yml up -d --build --wait
+      - name: Gateway serves the app and proxies /api/
+        run: |
+          curl -fsS http://localhost:18080/ > /dev/null
+          curl -fsS http://localhost:18080/api/healthz | grep '"ok"'
+      - name: Lab server is isolated
+        run: |
+          if docker compose -f docker-compose.real.yml exec -T lab-server wget -q -T 3 -O- http://example.com; then
+            echo "lab-server must not have outbound access"; exit 1
+          fi
+          if docker compose -f docker-compose.real.yml exec -T lab-server touch /app/x; then
+            echo "lab-server rootfs must be read-only"; exit 1
+          fi
+      - if: failure()
+        run: docker compose -f docker-compose.real.yml logs
+      - if: always()
+        run: docker compose -f docker-compose.real.yml down -v

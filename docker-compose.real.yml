@@ -1,0 +1,56 @@
+# Real-server environment: the static front end plus an intentionally
+# vulnerable lab server that runs on an isolated network.
+#
+#   docker compose -f docker-compose.real.yml up -d --build
+#
+# The default docker-compose.yml (static, simulated labs) is unchanged.
+#
+# Isolation rules for the lab server (keep them when adding targets):
+#   - only on the `lab` network, which is `internal` (no outbound access, so
+#     SSRF / command injection can't be used to reach the host or internet)
+#   - no published ports; reachable only through the gateway's /api/ proxy
+#   - non-root, read-only rootfs, no capabilities, resource limits
+name: hacklab-real
+
+services:
+  gateway:
+    build: .
+    image: hacklab-simulator
+    ports:
+      - "${HACKLAB_PORT:-8080}:80"
+    volumes:
+      - ./nginx.real.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - public
+      - lab
+    depends_on:
+      lab-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  lab-server:
+    build: ./server
+    image: hacklab-server
+    networks:
+      - lab
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+networks:
+  public: {}
+  lab:
+    internal: true
