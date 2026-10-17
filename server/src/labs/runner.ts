@@ -15,6 +15,8 @@ export interface AttackResult {
   solved: boolean;
   output: string[];
   note?: string;
+  /** Sanitized markup the front end mounts in a sandboxed iframe (XSS lab). */
+  renderHtml?: string;
   benign?: boolean;
   progress?: boolean;
   assembled?: string;
@@ -27,9 +29,9 @@ export interface RealLab {
   run(level: Level, input: LabInput): AttackResult | Promise<AttackResult>;
 }
 
-const MAX_BODY_BYTES = 16 * 1024;
+const MAX_BODY_BYTES = 64 * 1024;
 const MAX_FIELDS = 16;
-const MAX_VALUE_LENGTH = 2000;
+const MAX_VALUE_LENGTH = 8000;
 
 class BadRequest extends Error {}
 
