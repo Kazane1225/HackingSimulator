@@ -233,6 +233,30 @@ interface Resolved {
   introspection?: string;
 }
 
+/**
+ * Decides what a /graphql request asks for. An explicit query goes through the
+ * real parser (introspection, `order(id: ...)`). The "GraphQL (dev)" tab's
+ * default call is `order(id: <orderId>)`, so when the query is empty -- or is
+ * valid but selects neither `__schema` nor `order` -- and an `orderId` is
+ * supplied, that default resolver call is assumed. Syntax errors are never
+ * papered over.
+ */
+function planGraphql(query: string, orderId: string): { orderId: string } | { early: Resolved } {
+  if (query.trim() === "") {
+    return orderId
+      ? { orderId }
+      : { early: { leaked: false, reason: "対応していないクエリです。" } };
+  }
+  const parsed = parseGraphQL(query);
+  if ("error" in parsed) return { early: { leaked: false, reason: `GraphQL 構文エラー: ${parsed.error}` } };
+  if (parsed.fields.some((f) => f.name === "__schema")) {
+    return { early: { leaked: false, reason: "introspection で Order 型が見つかりました。", introspection: INTROSPECTION_SCHEMA } };
+  }
+  const orderField = parsed.fields.find((f) => f.name === "order");
+  if (orderField) return { orderId: String(orderField.args.id ?? "") };
+  return orderId ? { orderId } : { early: { leaked: false, reason: "対応していないクエリです。" } };
+}
+
 function resolveOrder(level: Level, db: DatabaseSync, input: LabInput): Resolved {
   const orderIdRaw = (input.orderId ?? "").trim();
   const ownerRaw = (input.owner ?? ALICE).trim().toLowerCase();
@@ -274,13 +298,9 @@ function resolveOrder(level: Level, db: DatabaseSync, input: LabInput): Resolved
 
   if (level === 4) {
     if (isGraphql) {
-      const parsed = parseGraphQL(query);
-      if ("error" in parsed) return { leaked: false, reason: `GraphQL 構文エラー: ${parsed.error}` };
-      const schemaField = parsed.fields.find((f) => f.name === "__schema");
-      if (schemaField) return { leaked: false, reason: "introspection で Order 型が見つかりました。", introspection: INTROSPECTION_SCHEMA };
-      const orderField = parsed.fields.find((f) => f.name === "order");
-      if (!orderField) return { leaked: false, reason: "対応していないクエリです。" };
-      const row = findById(db, String(orderField.args.id ?? ""));
+      const plan = planGraphql(query, orderIdRaw);
+      if ("early" in plan) return plan.early;
+      const row = findById(db, plan.orderId);
       if (!row) return { leaked: false, reason: "該当する注文がありません。" };
       if (row.owner_username !== ALICE) return { shown: row, leaked: true, reason: "GraphQL の order クエリにオブジェクト単位の認可がありません。" };
       return { shown: row, leaked: false, reason: "自分の注文を表示しました。" };
@@ -291,13 +311,9 @@ function resolveOrder(level: Level, db: DatabaseSync, input: LabInput): Resolved
 
   // Level 5: every route checks the authenticated subject's ownership.
   if (isGraphql) {
-    const parsed = parseGraphQL(query);
-    if ("error" in parsed) return { leaked: false, reason: `GraphQL 構文エラー: ${parsed.error}` };
-    const schemaField = parsed.fields.find((f) => f.name === "__schema");
-    if (schemaField) return { leaked: false, reason: "introspection で Order 型が見つかりました。", introspection: INTROSPECTION_SCHEMA };
-    const orderField = parsed.fields.find((f) => f.name === "order");
-    if (!orderField) return { leaked: false, reason: "対応していないクエリです。" };
-    const row = findById(db, String(orderField.args.id ?? ""));
+    const plan = planGraphql(query, orderIdRaw);
+    if ("early" in plan) return plan.early;
+    const row = findById(db, plan.orderId);
     return ownOrDeny(row, "GraphQL リゾルバがセッションユーザーと所有者を照合しました。");
   }
   const row = findById(db, orderIdRaw);
