@@ -1,0 +1,3 @@
+# Files that run inside the Linux lab container must keep LF endings.
+server/lab-files/** text eol=lf
+server/Dockerfile text eol=lf

@@ -78,7 +78,7 @@ export function App() {
 
       <footer className="statusbar">
         <span className="status-item">
-          <span className="status-dot" /> シミュレーションモード — 外部への通信なし
+          <span className="status-dot" /> 隔離された学習環境 — 外部への通信なし
         </span>
         <span className="titlebar-spacer" />
         <span className="status-item">許可された環境以外での攻撃は違法です</span>

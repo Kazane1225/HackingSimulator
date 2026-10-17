@@ -3,9 +3,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 export const SERVICE_NAME = "hacklab-server";
 export const SERVICE_VERSION = "0.1.0";
 
-type Handler = (req: IncomingMessage, res: ServerResponse) => void;
+type Handler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
 
-function json(res: ServerResponse, status: number, body: unknown): void {
+export function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -25,7 +25,7 @@ export function registerLab(prefix: string, handler: Handler): void {
   labRoutes.set(prefix, handler);
 }
 
-function route(req: IncomingMessage, res: ServerResponse): void {
+async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (req.method === "GET" && url.pathname === "/healthz") {
@@ -44,7 +44,7 @@ function route(req: IncomingMessage, res: ServerResponse): void {
 
   for (const [prefix, handler] of labRoutes) {
     if (url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)) {
-      handler(req, res);
+      await handler(req, res);
       return;
     }
   }
@@ -54,10 +54,9 @@ function route(req: IncomingMessage, res: ServerResponse): void {
 
 export function createApp(): Server {
   return createServer((req, res) => {
-    try {
-      route(req, res);
-    } catch {
-      json(res, 500, { error: "internal_error" });
-    }
+    route(req, res).catch(() => {
+      if (res.headersSent) res.end();
+      else json(res, 500, { error: "internal_error" });
+    });
   });
 }
