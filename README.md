@@ -73,6 +73,25 @@ npm run test:labs  # 全ラボのレベル設計を検証
 npm run build      # dist/ に本番ビルド
 ```
 
+## 実サーバー環境（開発中）
+
+ブラウザ内の疑似サーバーではなく、**実際に動く脆弱なサーバー**を相手にするための環境です（`develop_real_hacking_simulator` ブランチで開発中）。既存の静的版（上の `docker-compose.yml`）には影響しません。
+
+```bash
+npm run real:up     # docker compose -f docker-compose.real.yml up -d --build
+npm run real:down
+npm run server:test # サーバーの単体テスト（先に cd server && npm install）
+```
+
+http://localhost:8080 を開くと、フロントと同じ origin の `/api/` 経由でラボサーバーに届きます（動作確認: `/api/healthz`、`/api/info`）。
+
+| サービス | 役割 |
+|---|---|
+| `gateway` | 静的フロント + `/api/` のリバースプロキシ。唯一ポートを公開 |
+| `lab-server`（[server/](./server)） | 意図的に脆弱なラボの実体。ラボは `registerLab()` で追加 |
+
+`lab-server` は内部専用ネットワーク（外向き通信なし）、ポート非公開、非 root、読み取り専用ルート FS、全 capability 削除、CPU / メモリ / プロセス数制限で隔離しています。新しい標的を足すときもこの方針を保ってください。**このスタックはローカル利用が前提で、インターネットへ公開しないでください**（デプロイ方針は未定）。
+
 ## GitHub Pages へのデプロイ
 
 `.github/workflows/deploy.yml` が `main` への push ごとにテスト（ラボのテスト・型チェック・ビルド・E2E）→ ビルド → デプロイを行います。テストが 1 つでも失敗すると公開されません。
