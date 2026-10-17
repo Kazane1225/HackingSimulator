@@ -25,6 +25,11 @@ export function registerLab(prefix: string, handler: Handler): void {
   labRoutes.set(prefix, handler);
 }
 
+/** Test helper. The registry is process-wide, so each file starts clean. */
+export function resetLabs(): void {
+  labRoutes.clear();
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
 

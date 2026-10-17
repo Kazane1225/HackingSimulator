@@ -202,7 +202,8 @@ const EVENT_HANDLER_ATTR = /^on[a-z]+$/;
 const JS_URI = /^\s*javascript:/i;
 const NAV_ATTR_TAGS: Record<string, string> = { a: "href", area: "href", iframe: "src", form: "action" };
 
-function hasActiveVector(html: string): boolean {
+/** True when the markup still contains a script or event-handler vector. */
+export function markupFires(html: string): boolean {
   const { elements, scripts } = parseHtml(html);
   for (const script of scripts) {
     if (scriptFires(script)) return true;
@@ -220,7 +221,7 @@ function hasActiveVector(html: string): boolean {
 function run(level: Level, input: LabInput): AttackResult {
   const comment = input.comment ?? "";
   const renderHtml = render(level, comment);
-  const solved = hasActiveVector(renderHtml);
+  const solved = markupFires(renderHtml);
 
   const output: string[] = [
     "-- サーバーが生成した HTML（コメント部分）",

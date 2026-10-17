@@ -16,32 +16,31 @@ test.describe("real server mode", () => {
 
   test("sends the attack to the real server and shows its response", async ({ page, lab }) => {
     await page.route("**/api/info", (route) => route.fulfill({ json: INFO }));
-    let posted: { level: number; input: Record<string, string> } | undefined;
-    await page.route("**/api/sqli/run", async (route) => {
-      posted = route.request().postDataJSON();
+    let username: string | null = null;
+    await page.route("**/api/sqli/lv1/login", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      username = new URLSearchParams(route.request().postData() ?? "").get("username");
       await route.fulfill({
-        json: {
-          solved: true,
-          output: ["SELECT username, role FROM users WHERE username='admin'-- ';", "", "→ 1 行ヒット", "   admin  (administrator)"],
-          assembled: "SELECT username, role FROM users WHERE username='admin'-- ';",
-          note: "admin としてログイン成功。認証をバイパスしました。",
-        },
+        status: 200,
+        contentType: "text/plain; charset=utf-8",
+        body: "SELECT username, role FROM users WHERE username='admin'-- ';\n\n→ 1 行ヒット\n   admin  (administrator)\n",
       });
     });
 
     await lab.goto("sqli");
     await lab.setIntercept(false);
     await page.getByTestId("mode-switch").getByRole("button", { name: "実サーバー" }).click();
+    await expect(lab.pane("proxy").locator(".raw")).toContainText("POST /sqli/lv1/login");
     await lab.send("username", "admin'-- ");
 
     await expect(lab.statusBadge).toHaveText(STATUS.success);
-    expect(posted?.level).toBe(1);
-    expect(posted?.input.username).toBe("admin'-- ");
+    await expect(page.getByTestId("http-response")).toContainText("admin  (administrator)");
+    expect(username).toBe("admin'-- ");
   });
 
   test("explains a connection failure instead of hanging", async ({ page, lab }) => {
     await page.route("**/api/info", (route) => route.fulfill({ json: INFO }));
-    await page.route("**/api/sqli/run", (route) => route.abort());
+    await page.route("**/api/sqli/lv1/login", (route) => route.abort());
 
     await lab.goto("sqli");
     await lab.setIntercept(false);

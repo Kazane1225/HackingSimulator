@@ -2,7 +2,15 @@ import { Fragment, useCallback, useRef, useState } from "react";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
-import { runReal, useRealLabs } from "../realServer";
+import {
+  buildLabRequest,
+  executeLabRequest,
+  formatRawRequest,
+  formatRawResponse,
+  judgeLabResponse,
+  type HttpResponse,
+} from "../realHttp";
+import { useRealLabs } from "../realServer";
 import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LAB_UI } from "./labUI";
@@ -42,6 +50,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [level, setLevel] = useState<Level>(firstUnsolved);
   const [inputs, setInputs] = useState<LabInput>(() => defaultInputs(lab));
   const [result, setResult] = useState<AttackResult | null>(null);
+  const [httpResponse, setHttpResponse] = useState<HttpResponse | null>(null);
   const [runId, setRunId] = useState(0);
   const [fired, setFired] = useState<string | null>(null);
   const [intercept, setIntercept] = useState(true);
@@ -79,6 +88,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const clear = () => {
     requestSeq.current++;
     setResult(null);
+    setHttpResponse(null);
     setFired(null);
     setHeld(false);
     setBrowserTab(browserTabs[0].id);
@@ -132,25 +142,34 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
     }
     // Labs that render markup are judged by real execution in the sandboxed
     // iframe (see onFire), not by the heuristic in run().
-    if (r.solved && r.renderHtml === undefined) markSolved(id, level);
+    if (level < 5 && r.solved && r.renderHtml === undefined) markSolved(id, level);
   };
 
   const forward = (requestInputs: LabInput = inputs) => {
     const seq = ++requestSeq.current;
     if (!viaReal) {
+      setHttpResponse(null);
       applyResult(lab.run(level, requestInputs), requestInputs);
       return;
     }
-    runReal(id, level, requestInputs)
-      .catch(
-        (err: unknown): AttackResult => ({
-          solved: false,
-          output: [`実サーバーに接続できませんでした: ${err instanceof Error ? err.message : String(err)}`],
-          note: "実サーバーが起動しているか確認してください（docker compose -f docker-compose.real.yml up）。",
-        }),
-      )
-      .then((r) => {
-        if (seq === requestSeq.current) applyResult(r, requestInputs);
+    const request = buildLabRequest(id, level, requestInputs);
+    executeLabRequest("api", request)
+      .then((http) => {
+        if (seq !== requestSeq.current) return;
+        setHttpResponse(http);
+        applyResult(judgeLabResponse(id, level, requestInputs, http), requestInputs);
+      })
+      .catch((err: unknown) => {
+        if (seq !== requestSeq.current) return;
+        setHttpResponse(null);
+        applyResult(
+          {
+            solved: false,
+            output: [`実サーバーに接続できませんでした: ${err instanceof Error ? err.message : String(err)}`],
+            note: "実サーバーが起動しているか確認してください（docker compose -f docker-compose.real.yml up）。",
+          },
+          requestInputs,
+        );
       });
   };
 
@@ -318,7 +337,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                 リクエストを傍受しました。値を改ざんして Forward してください。
               </div>
             )}
-            <pre className="raw mono">{ui.request(inputs).join("\n")}</pre>
+            <pre className="raw mono">{viaReal ? formatRawRequest(buildLabRequest(id, level, inputs)) : ui.request(inputs).join("\n")}</pre>
             <div className="params">
               <div className="params-head">
                 <span>パラメータ</span>
@@ -437,16 +456,22 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                     )}
                   </div>
                 )}
-                {result.assembled && !assembledDuplicatesOutput(result.assembled, result.output) && (
-                  <div className="assembled">
-                    <div className="assembled-label mono">サーバーが組み立てた処理</div>
-                    <pre className="console assembled-pre">{result.assembled}</pre>
-                  </div>
+                {httpResponse ? (
+                  <pre className="console" data-testid="http-response">{formatRawResponse(httpResponse)}</pre>
+                ) : (
+                  <>
+                    {result.assembled && !assembledDuplicatesOutput(result.assembled, result.output) && (
+                      <div className="assembled">
+                        <div className="assembled-label mono">サーバーが組み立てた処理</div>
+                        <pre className="console assembled-pre">{result.assembled}</pre>
+                      </div>
+                    )}
+                    <details key={runId} className="console-details">
+                      <summary>コンソール（詳細）</summary>
+                      <pre className="console">{result.output.join("\n")}</pre>
+                    </details>
+                  </>
                 )}
-                <details key={runId} className="console-details">
-                  <summary>コンソール（詳細）</summary>
-                  <pre className="console">{result.output.join("\n")}</pre>
-                </details>
                 {labLoot.length > 0 && (
                   <div className="loot">
                     <div className="loot-label mono">戦利品</div>
