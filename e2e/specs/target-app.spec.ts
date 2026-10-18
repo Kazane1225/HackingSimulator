@@ -28,6 +28,20 @@ test.describe("shared target app", () => {
     await expect(lab.pane("target").getByRole("heading", { name: "管理者ログイン" })).toBeVisible();
   });
 
+  test("opens the target app in another tab", async ({ page, lab }) => {
+    await seedProgress(page, JSON.stringify({ sqli: [1], idor: [1] }));
+    await lab.goto("xss");
+    const popupPromise = page.waitForEvent("popup");
+    await lab.pane("target").getByRole("button", { name: "アプリを開く" }).click();
+    const popup = await popupPromise;
+    await expect(popup).toHaveTitle("Harbor");
+    await expect(popup.getByRole("heading", { name: "みんなのゲストブック" }).first()).toBeVisible();
+    await popup.getByRole("button", { name: "ホーム" }).click();
+    await expect(popup.getByTestId("store-account")).toHaveText("admin");
+    await popup.getByRole("button", { name: "注文" }).click();
+    await expect(popup.getByTestId("store-orders")).toContainText("法人向けセキュリティキー");
+  });
+
   test("solving sqli shows admin on the next lab", async ({ lab }) => {
     await lab.goto(SQLI_LOGIN.lab);
     await expect(lab.pane("target").getByTestId("target-account")).toHaveText("alice");

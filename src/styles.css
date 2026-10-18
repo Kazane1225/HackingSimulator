@@ -972,6 +972,142 @@ a.owasp-cell:hover {
   flex: 1;
   min-width: 0;
 }
+.target-launch {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px 0;
+}
+
+/* Harbor, the target app in its own tab. */
+.store {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  background: #f6f3ee;
+  color: #241f1a;
+}
+.store-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 12px;
+  background: #efe8dc;
+  border-right: 1px solid #e2d9cb;
+}
+.store-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.store-nav-list {
+  display: grid;
+  gap: 4px;
+}
+.store-nav-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.store-nav-list button.active {
+  background: #fff;
+}
+.store-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #1f6f5b;
+}
+.store-main {
+  min-width: 0;
+  padding: 28px 32px 48px;
+}
+.store-page h1 {
+  margin: 0 0 18px;
+  font-size: 22px;
+  font-weight: 650;
+}
+.store-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+}
+.store-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e4ddd2;
+  font-weight: 700;
+}
+.store-avatar.replaced {
+  background: #f3d2a4;
+}
+.store-orders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  border-radius: 12px;
+}
+.store-orders li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 12px 16px;
+}
+.store-orders li + li {
+  border-top: 1px solid #efe8dc;
+}
+.store-mail {
+  padding: 16px;
+  border-radius: 12px;
+  background: #fff;
+}
+.store-mail h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.store-mail p {
+  margin: 0;
+}
+.store-empty {
+  color: #6d645b;
+}
+.store-tool .app-screen,
+.store-tool .app-login {
+  border-radius: 12px;
+}
+@media (max-width: 720px) {
+  .store {
+    grid-template-columns: 1fr;
+  }
+  .store-nav-list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .store-nav-list button span {
+    display: none;
+  }
+  .store-main {
+    padding: 18px 14px 32px;
+  }
+}
 
 /* ---------- simulated target applications ---------- */
 .app-screen,

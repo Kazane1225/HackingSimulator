@@ -3,6 +3,7 @@ import { Glossary } from "./components/Glossary";
 import { Home } from "./components/Home";
 import { LabPage } from "./components/LabPage";
 import { Sidebar } from "./components/Sidebar";
+import { StoreWindow } from "./components/StoreWindow";
 import { Logo } from "./components/icons";
 import { LABS, findLab } from "./labs";
 import { useProgress } from "./progress";
@@ -24,6 +25,8 @@ export function App() {
 
   const labMatch = route.match(/^\/lab\/([\w-]+)/);
   const lab = labMatch ? findLab(labMatch[1]) : undefined;
+
+  if (route === "/app") return <StoreWindow progress={progress} />;
 
   const total = LABS.length * 4;
   const cleared = LABS.reduce(

@@ -17,4 +17,5 @@ export const ROUTES: { name: string; path: string }[] = [
   { name: "integrity lab", path: "/#/lab/integrity" },
   { name: "logging lab", path: "/#/lab/logging" },
   { name: "glossary", path: "/#/glossary" },
+  { name: "harbor app", path: "/#/app" },
 ];
