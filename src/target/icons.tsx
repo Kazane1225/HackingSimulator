@@ -62,4 +62,4 @@ export function ScreenIcon(props: IconProps) {
 }
 
 /** Square app icon used as the Harbor window favicon. */
-export const HARBOR_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f4efe6"/><g fill="none" stroke="#1f6f5b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15 16 7l9 8"/><path d="M9.5 14.5V25h13v-10.5"/><path d="M14 25v-6h4v6"/></g></svg>`;
+export const HARBOR_FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#10243a"/><path fill="#f3c16b" d="M6.5 14.2 16 6.2l9.5 8v.2H6.5z"/><path fill="#f7f4ee" d="M9 15.2h14V25a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1z"/><path fill="#10243a" d="M14 20.2h4V26h-4z"/></svg>`;
