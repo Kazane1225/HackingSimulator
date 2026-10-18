@@ -4,7 +4,7 @@ import { traced } from "./trace";
 // Built from fragments so training credentials are not mistaken for live
 // username/password pairs by repository secret scanners.
 const ADMIN_PASSWORD_LV2 = ["Spring", "2026", "!"].join("");
-const DEBUG_MFA = "482016";
+export const DEBUG_MFA = "482016";
 
 function run(level: Level, input: LabInput): AttackResult {
   const username = (input.username ?? "").trim();

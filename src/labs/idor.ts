@@ -10,14 +10,14 @@ interface Order {
   price: string;
 }
 
-const ALICE: Order = {
+export const ALICE: Order = {
   id: "1001",
   owner: "alice",
   item: "USB-C ケーブル",
   price: "¥2,480",
 };
 
-const BOB: Order = {
+export const BOB: Order = {
   id: BOB_ORDER,
   owner: "bob",
   item: "法人向けセキュリティキー",
