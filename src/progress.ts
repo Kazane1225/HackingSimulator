@@ -42,6 +42,23 @@ export function useProgress() {
     }
   }, [progress]);
 
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY) return;
+      let next: Progress = {};
+      if (event.newValue) {
+        try {
+          next = sanitize(JSON.parse(event.newValue));
+        } catch {
+          next = {};
+        }
+      }
+      setProgress((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const markSolved = useCallback((labId: string, level: Level) => {
     setProgress((prev) => {
       const solved = prev[labId] ?? [];

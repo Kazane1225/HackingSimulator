@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
@@ -17,6 +17,7 @@ import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
 import { TargetApp } from "./TargetApp";
+import { openTargetApp, targetChannel, type TargetState } from "../target/link";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
 
@@ -203,6 +204,60 @@ export function LabPage({ lab, progress, isSolved, markSolved }: Props) {
     [id, level, markSolved],
   );
 
+  const bridge = useRef({ setField, submitFromApp, setBrowserTab, onFire });
+  bridge.current = { setField, submitFromApp, setBrowserTab, onFire };
+  const snapshotRef = useRef<TargetState>({
+    type: "state",
+    labId: id,
+    level,
+    inputs,
+    result,
+    runId,
+    fired,
+    browserTab,
+    succeeded,
+  });
+  snapshotRef.current = {
+    type: "state",
+    labId: id,
+    level,
+    inputs,
+    result,
+    runId,
+    fired,
+    browserTab,
+    succeeded,
+  };
+
+  useEffect(() => {
+    const channel = targetChannel();
+    if (!channel) return;
+    channel.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as { type?: string; name?: string; value?: string; patch?: LabInput; id?: string; message?: string };
+      if (!msg || typeof msg.type !== "string") return;
+      if (msg.type === "hello") {
+        channel.postMessage(snapshotRef.current);
+      } else if (msg.type === "field" && typeof msg.name === "string") {
+        bridge.current.setField(msg.name, msg.value ?? "");
+      } else if (msg.type === "submit") {
+        bridge.current.submitFromApp(msg.patch);
+      } else if (msg.type === "tab" && typeof msg.id === "string") {
+        bridge.current.setBrowserTab(msg.id);
+      } else if (msg.type === "fire" && typeof msg.message === "string") {
+        bridge.current.onFire(msg.message);
+      }
+    };
+    channel.postMessage(snapshotRef.current);
+    return () => channel.close();
+  }, []);
+
+  useEffect(() => {
+    const channel = targetChannel();
+    if (!channel) return;
+    channel.postMessage(snapshotRef.current);
+    channel.close();
+  }, [id, level, inputs, result, runId, fired, browserTab, succeeded]);
+
   const labLoot = loot.filter((item) => item.labId === id);
 
   const status = held
@@ -303,6 +358,11 @@ export function LabPage({ lab, progress, isSolved, markSolved }: Props) {
 
       <div className={`workbench show-${mobileTab}`}>
         <section className="wb-target" data-testid="pane-target">
+          <div className="target-launch">
+            <button type="button" className="btn" onClick={openTargetApp}>
+              アプリを開く
+            </button>
+          </div>
           <BrowserChrome
             tabs={browserTabs}
             activeTabId={browserTab}
