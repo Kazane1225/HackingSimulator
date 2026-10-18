@@ -70,7 +70,7 @@ export function App() {
         <Sidebar activeId={lab?.meta.id} progress={progress} glossaryActive={route === "/glossary"} />
         <main className="main">
           {lab ? (
-            <LabPage key={lab.meta.id} lab={lab} progress={progress} isSolved={isSolved} markSolved={markSolved} />
+            <LabPage key={lab.meta.id} lab={lab} isSolved={isSolved} markSolved={markSolved} />
           ) : route === "/glossary" ? (
             <Glossary />
           ) : (

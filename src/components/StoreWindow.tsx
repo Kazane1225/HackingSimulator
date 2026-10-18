@@ -5,6 +5,7 @@ import type { Progress } from "../progress";
 import { worldFromProgress } from "../target/world";
 import { HarborMark, HARBOR_FAVICON, HomeIcon, MailIcon, OrdersIcon, ScreenIcon } from "../target/icons";
 import { targetChannel, type TargetState } from "../target/link";
+import { BrowserChrome } from "./BrowserChrome";
 import { LAB_UI } from "./labUI";
 
 type View = "home" | "orders" | "mail" | "tool";
@@ -71,6 +72,22 @@ export function StoreWindow({ progress }: Props) {
   };
 
   const pageTitle = view === "home" ? "ホーム" : view === "orders" ? "注文" : view === "mail" ? "受信箱" : (ui?.site ?? "画面");
+
+  const toolScreen =
+    remote && ui
+      ? ui.renderApp({
+          inputs,
+          setField,
+          submit: (patch) => post({ type: "submit", patch: { ...inputs, ...patch } }),
+          result: remote.result,
+          succeeded: remote.succeeded,
+          runId: remote.runId,
+          onFire: (message) => post({ type: "fire", message }),
+          level: remote.level as Level,
+          browserTab: remote.browserTab,
+          setBrowserTab: (id) => post({ type: "tab", id }),
+        })
+      : null;
 
   return (
     <div className="store" data-testid="store-window">
@@ -174,20 +191,19 @@ export function StoreWindow({ progress }: Props) {
           )}
           {view === "tool" && (
             <section className="store-page store-tool">
-              {remote && ui && lab ? (
+              {remote && ui && lab && toolScreen ? (
                 <div className="store-panel store-tool-card">
-                  {ui.renderApp({
-                    inputs,
-                    setField,
-                    submit: (patch) => post({ type: "submit", patch: { ...inputs, ...patch } }),
-                    result: remote.result,
-                    succeeded: remote.succeeded,
-                    runId: remote.runId,
-                    onFire: (message) => post({ type: "fire", message }),
-                    level: remote.level as Level,
-                    browserTab: remote.browserTab,
-                    setBrowserTab: (id) => post({ type: "tab", id }),
-                  })}
+                  {ui.browserTabs ? (
+                    <BrowserChrome
+                      tabs={ui.browserTabs}
+                      activeTabId={remote.browserTab}
+                      onTabChange={(id) => post({ type: "tab", id })}
+                    >
+                      {toolScreen}
+                    </BrowserChrome>
+                  ) : (
+                    toolScreen
+                  )}
                 </div>
               ) : (
                 <div className="store-panel store-empty">

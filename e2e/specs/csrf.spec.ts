@@ -4,8 +4,8 @@ import { STATUS } from "../data/labels";
 test.describe("CSRF browser tabs", () => {
   test("starts on the bank tab and keeps the trap page on another tab", async ({ lab }) => {
     await lab.goto("csrf");
+    const chrome = await lab.openApp();
 
-    const chrome = lab.pane("target");
     await expect(chrome.getByRole("tab", { name: "SecureBank" })).toHaveAttribute("aria-selected", "true");
     await expect(chrome.getByText("https://bank.example/account")).toBeVisible();
     await expect(chrome.getByText("victim としてログイン中")).toBeVisible();
@@ -17,17 +17,18 @@ test.describe("CSRF browser tabs", () => {
     await expect(chrome.getByLabel("罠ページの HTML")).toBeVisible();
   });
 
-  test("opening the trap page switches back to the bank tab", async ({ page, lab }) => {
+  test("opening the trap page switches back to the bank tab", async ({ lab }) => {
     await lab.goto("csrf");
     await lab.setIntercept(false);
-    await lab.pane("target").getByRole("tab", { name: "かわいい子猫" }).click();
-    await page.getByLabel("罠ページの HTML").fill(
+    const chrome = await lab.openApp();
+    await chrome.getByRole("tab", { name: "かわいい子猫" }).click();
+    await chrome.getByLabel("罠ページの HTML").fill(
       '<img src="https://bank.example/transfer?to=attacker&amount=10000">',
     );
-    await page.getByRole("button", { name: "被害者がこのページを開く" }).click();
+    await chrome.getByRole("button", { name: "被害者がこのページを開く" }).click();
 
     await expect(lab.statusBadge).toHaveText(STATUS.success);
-    await expect(lab.pane("target").getByRole("tab", { name: "SecureBank" })).toHaveAttribute("aria-selected", "true");
-    await expect(lab.pane("target").getByText(/attacker へ送金されました/)).toBeVisible();
+    await expect(chrome.getByRole("tab", { name: "SecureBank" })).toHaveAttribute("aria-selected", "true");
+    await expect(chrome.getByText(/attacker へ送金されました/)).toBeVisible();
   });
 });

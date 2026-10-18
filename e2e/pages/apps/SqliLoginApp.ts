@@ -1,18 +1,23 @@
-import type { Locator } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import type { LabPage } from "../LabPage";
 
-/** SecureBank admin login, the target app of the SQL injection lab. */
+/** Harbor's admin login, the screen for the SQL injection lab. */
 export class SqliLoginApp {
-  private readonly app: Locator;
+  private harbor: Page | null = null;
 
-  constructor(private readonly lab: LabPage) {
-    this.app = lab.pane("target");
+  constructor(private readonly lab: LabPage) {}
+
+  private async app(): Promise<Page> {
+    if (this.harbor && !this.harbor.isClosed()) return this.harbor;
+    this.harbor = await this.lab.openApp();
+    await this.harbor.getByRole("heading", { name: "管理者ログイン" }).waitFor();
+    return this.harbor;
   }
 
   async login(username: string, password: string) {
-    await this.lab.openPane("target");
-    await this.app.getByRole("textbox", { name: "ユーザー名" }).fill(username);
-    await this.app.getByRole("textbox", { name: "パスワード" }).fill(password);
-    await this.app.getByRole("button", { name: "ログイン" }).click();
+    const app = await this.app();
+    await app.getByRole("textbox", { name: "ユーザー名" }).fill(username);
+    await app.getByRole("textbox", { name: "パスワード" }).fill(password);
+    await app.getByRole("button", { name: "ログイン" }).click();
   }
 }
