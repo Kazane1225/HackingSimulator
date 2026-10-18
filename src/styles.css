@@ -603,11 +603,6 @@ a.owasp-cell:hover {
   white-space: nowrap;
 }
 
-.mode-switch {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
 /* Three working areas: target browser | proxy | inspector. */
 .workbench {
   display: grid;
@@ -805,12 +800,6 @@ a.owasp-cell:hover {
     justify-content: center;
     min-width: 3.4rem;
     padding: 0 8px;
-  }
-  .mode-switch {
-    width: 100%;
-  }
-  .mode-switch .seg {
-    flex: 1;
   }
 }
 
