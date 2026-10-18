@@ -10,7 +10,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     // Same-origin /api/ like the gateway in docker-compose.real.yml. Without a
-    // running lab server the app simply offers no "実サーバー" switch.
+    // running lab server the app keeps using the in-browser simulation.
     proxy: {
       "/api": {
         target: process.env.HACKLAB_SERVER ?? "http://localhost:3000",

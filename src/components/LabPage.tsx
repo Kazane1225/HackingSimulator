@@ -69,9 +69,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
   const [browserTab, setBrowserTab] = useState(browserTabs[0].id);
 
-  const realAvailable = useRealLabs().includes(id);
-  const [realMode, setRealMode] = useState(false);
-  const viaReal = realMode && realAvailable;
+  const viaReal = useRealLabs().includes(id);
   // Bumped whenever the pending result is no longer wanted (new request, level change, reset).
   const requestSeq = useRef(0);
 
@@ -311,32 +309,6 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
       <div className="defense-bar">
         <span className="defense-tag mono">防御 Lv{level}</span>
         <span>{spec.defense}</span>
-        {realAvailable && (
-          <div className="segmented mode-switch" role="group" aria-label="標的の種類" data-testid="mode-switch">
-            <button
-              className={`seg ${!realMode ? "active" : ""}`}
-              aria-pressed={!realMode}
-              onClick={() => {
-                setRealMode(false);
-                clear();
-              }}
-              title="ブラウザ内の疑似サーバー"
-            >
-              シミュレート
-            </button>
-            <button
-              className={`seg ${realMode ? "active" : ""}`}
-              aria-pressed={realMode}
-              onClick={() => {
-                setRealMode(true);
-                clear();
-              }}
-              title="実際に動く脆弱なサーバー（隔離コンテナ）"
-            >
-              実サーバー
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="mobile-tabs" role="tablist" aria-label="表示ペイン" data-testid="mobile-tabs">

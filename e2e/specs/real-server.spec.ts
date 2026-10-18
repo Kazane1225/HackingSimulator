@@ -29,7 +29,6 @@ test.describe("real server mode", () => {
 
     await lab.goto("sqli");
     await lab.setIntercept(false);
-    await page.getByTestId("mode-switch").getByRole("button", { name: "実サーバー" }).click();
     await expect(lab.pane("proxy").locator(".raw")).toContainText("POST /sqli/lv1/login");
     await lab.send("username", "admin'-- ");
 
@@ -44,7 +43,7 @@ test.describe("real server mode", () => {
 
     await lab.goto("sqli");
     await lab.setIntercept(false);
-    await page.getByTestId("mode-switch").getByRole("button", { name: "実サーバー" }).click();
+    await expect(lab.pane("proxy").locator(".raw")).toContainText("POST /sqli/lv1/login");
     await lab.send("username", "admin");
 
     await expect(page.getByText(/実サーバーが起動しているか確認してください/)).toBeVisible();
