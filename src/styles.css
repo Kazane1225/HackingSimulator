@@ -617,8 +617,10 @@ a.owasp-cell:hover {
 }
 .wb-target {
   grid-area: target;
+  position: relative;
   min-width: 0;
   display: flex;
+  flex-direction: column;
 }
 .wb-proxy {
   grid-area: proxy;
@@ -978,6 +980,168 @@ a.owasp-cell:hover {
   padding: 8px 10px 0;
 }
 
+/* The lab pane is the situation. Harbor itself opens from the button. */
+.brief {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pane);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: auto;
+}
+.brief-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.brief-top .btn {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.brief-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brief-logo {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #10243a;
+  color: #f3c16b;
+}
+.brief-kicker {
+  margin: 0;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.brief h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.brief-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+  min-height: 0;
+}
+.brief-card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 0;
+}
+.brief-card.brief-situation {
+  justify-content: flex-start;
+  padding: 18px 20px;
+}
+.brief-howto {
+  grid-column: 1;
+  grid-row: 2;
+}
+.brief-success {
+  grid-column: 2;
+  grid-row: 2;
+}
+.brief-card h3 {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+.brief-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.75;
+}
+.brief-situation p {
+  font-size: 15.5px;
+  line-height: 1.85;
+}
+.brief-success {
+  background: rgba(95, 184, 120, 0.06);
+  border-color: rgba(95, 184, 120, 0.35);
+}
+.brief-steps {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.brief-steps span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(240, 140, 58, 0.16);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+.xss-judge {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .brief-top {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .brief-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .brief-howto,
+  .brief-success {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
 /* Harbor, the target app in its own tab. */
 .store {
   height: 100%;
@@ -1257,6 +1421,11 @@ a.owasp-cell:hover {
 }
 .store-tool-card {
   overflow: hidden;
+}
+.store .browser {
+  flex: none;
+  border: 0;
+  border-radius: 0;
 }
 .store .app-screen,
 .store .app-login {

@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
-import type { Progress } from "../progress";
 import {
   buildLabRequest,
   executeLabRequest,
@@ -12,26 +11,25 @@ import {
   type HttpResponse,
 } from "../realHttp";
 import { useRealLabs } from "../realServer";
-import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
+import { LabBrief } from "./LabBrief";
 import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
-import { TargetApp } from "./TargetApp";
-import { openTargetApp, targetChannel, type TargetState } from "../target/link";
+import { XssPreview } from "./XssPreview";
+import { targetChannel, type TargetState } from "../target/link";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
 
 /** On narrow screens the three workbench panes are shown one at a time. */
 type MobileTab = "target" | "proxy" | "inspector";
 const MOBILE_TABS: { key: MobileTab; label: string }[] = [
-  { key: "target", label: "標的アプリ" },
+  { key: "target", label: "状況" },
   { key: "proxy", label: "Proxy" },
   { key: "inspector", label: "ヒント・解説" },
 ];
 
 interface Props {
   lab: Lab;
-  progress: Progress;
   isSolved: (labId: string, level: Level) => boolean;
   markSolved: (labId: string, level: Level) => void;
 }
@@ -46,7 +44,7 @@ function assembledDuplicatesOutput(assembled: string | undefined, output: string
   return output.join("\n").includes(a);
 }
 
-export function LabPage({ lab, progress, isSolved, markSolved }: Props) {
+export function LabPage({ lab, isSolved, markSolved }: Props) {
   const id = lab.meta.id;
   const ui = LAB_UI[id];
   const firstUnsolved = LEVELS.find((lv) => lv < 5 && !isSolved(id, lv)) ?? 5;
@@ -358,32 +356,12 @@ export function LabPage({ lab, progress, isSolved, markSolved }: Props) {
 
       <div className={`workbench show-${mobileTab}`}>
         <section className="wb-target" data-testid="pane-target">
-          <div className="target-launch">
-            <button type="button" className="btn" onClick={openTargetApp}>
-              アプリを開く
-            </button>
-          </div>
-          <BrowserChrome
-            tabs={browserTabs}
-            activeTabId={browserTab}
-            onTabChange={setBrowserTab}
-            onReload={clear}
-          >
-            <TargetApp labId={id} browserTab={browserTab} progress={progress}>
-              {ui.renderApp({
-                inputs,
-                setField,
-                submit: submitFromApp,
-                result,
-                succeeded,
-                runId,
-                onFire,
-                level,
-                browserTab,
-                setBrowserTab,
-              })}
-            </TargetApp>
-          </BrowserChrome>
+          <LabBrief labId={id} level={level} />
+          {result?.renderHtml !== undefined && (
+            <div className="xss-judge">
+              <XssPreview html={result.renderHtml} runId={runId} onFire={onFire} />
+            </div>
+          )}
         </section>
 
         <section className="pane wb-proxy" data-testid="pane-proxy">

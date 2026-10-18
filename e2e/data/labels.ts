@@ -14,7 +14,7 @@ export type Pane = "target" | "proxy" | "inspector";
 
 /** Labels of the narrow-screen pane tabs. */
 export const MOBILE_TAB_LABELS: Record<Pane, string> = {
-  target: "標的アプリ",
+  target: "状況",
   proxy: "Proxy",
   inspector: "ヒント・解説",
 };

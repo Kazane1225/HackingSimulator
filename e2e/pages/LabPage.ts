@@ -30,6 +30,16 @@ export class LabPage {
     await this.page.goto(`/#/lab/${labId}`);
   }
 
+  /** Harbor, the target app, in the tab opened from the brief. */
+  async openApp(): Promise<Page> {
+    const popupPromise = this.page.waitForEvent("popup");
+    await this.openPane("target");
+    await this.pane("target").getByRole("button", { name: "アプリを開く" }).click();
+    const popup = await popupPromise;
+    await popup.locator(".store-tool-card").waitFor();
+    return popup;
+  }
+
   pane(name: Pane): Locator {
     return this.page.getByTestId(`pane-${name}`);
   }
