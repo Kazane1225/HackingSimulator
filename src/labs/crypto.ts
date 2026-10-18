@@ -7,7 +7,7 @@ import { traced } from "./trace";
  * changes the scheme so the previous blob no longer opens.
  */
 
-const PAN = "4242424242424242";
+export const PAN = "4242424242424242";
 
 function xorByte(value: string, key: number): string {
   return [...value].map((c) => String.fromCharCode(c.charCodeAt(0) ^ key)).join("");

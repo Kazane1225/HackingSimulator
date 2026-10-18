@@ -2,6 +2,7 @@ import { Fragment, useCallback, useRef, useState } from "react";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
+import type { Progress } from "../progress";
 import {
   buildLabRequest,
   executeLabRequest,
@@ -15,6 +16,7 @@ import { BrowserChrome } from "./BrowserChrome";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
+import { TargetApp } from "./TargetApp";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
 
@@ -28,6 +30,7 @@ const MOBILE_TABS: { key: MobileTab; label: string }[] = [
 
 interface Props {
   lab: Lab;
+  progress: Progress;
   isSolved: (labId: string, level: Level) => boolean;
   markSolved: (labId: string, level: Level) => void;
 }
@@ -42,7 +45,7 @@ function assembledDuplicatesOutput(assembled: string | undefined, output: string
   return output.join("\n").includes(a);
 }
 
-export function LabPage({ lab, isSolved, markSolved }: Props) {
+export function LabPage({ lab, progress, isSolved, markSolved }: Props) {
   const id = lab.meta.id;
   const ui = LAB_UI[id];
   const firstUnsolved = LEVELS.find((lv) => lv < 5 && !isSolved(id, lv)) ?? 5;
@@ -80,8 +83,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const solutionUnlocked = solvedHere || (level === 5 && isSolved(id, 4));
   const executionJudged = result?.renderHtml !== undefined;
   const succeeded = !!result && (executionJudged ? fired !== null : result.solved);
-  const progress = !!result && !succeeded && !!result.progress;
-  const benign = !!result && !succeeded && !!result.benign && !progress;
+  const partial = !!result && !succeeded && !!result.progress;
+  const benign = !!result && !succeeded && !!result.benign && !partial;
 
   const setField = (name: string, value: string) => setInputs((prev) => ({ ...prev, [name]: value }));
 
@@ -210,7 +213,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
         ? { cls: "ok", label: "成功" }
         : level === 5
           ? { cls: "blocked", label: "防御済み" }
-          : progress
+          : partial
             ? { cls: "progress", label: "進展あり" }
             : benign
               ? { cls: "benign", label: "通常応答" }
@@ -306,18 +309,20 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
             onTabChange={setBrowserTab}
             onReload={clear}
           >
-            {ui.renderApp({
-              inputs,
-              setField,
-              submit: submitFromApp,
-              result,
-              succeeded,
-              runId,
-              onFire,
-              level,
-              browserTab,
-              setBrowserTab,
-            })}
+            <TargetApp labId={id} browserTab={browserTab} progress={progress}>
+              {ui.renderApp({
+                inputs,
+                setField,
+                submit: submitFromApp,
+                result,
+                succeeded,
+                runId,
+                onFire,
+                level,
+                browserTab,
+                setBrowserTab,
+              })}
+            </TargetApp>
           </BrowserChrome>
         </section>
 

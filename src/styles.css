@@ -911,6 +911,67 @@ a.owasp-cell:hover {
   background: #f3f5f7;
   color: #252a31;
 }
+.target-app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f3f5f7;
+  color: #252a31;
+}
+.target-bar,
+.target-orders,
+.target-mail {
+  background: #fff;
+  border-bottom: 1px solid #e1e4e8;
+}
+.target-bar,
+.target-mail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.target-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+}
+.target-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #d7dde4;
+  color: #252a31;
+  font-size: 11px;
+  font-weight: 700;
+}
+.target-avatar.replaced {
+  background: #f3d2a4;
+}
+.target-orders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.target-orders li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+.target-orders li + li {
+  border-top: 1px solid #eef0f2;
+}
+.target-app-body {
+  flex: 1;
+  min-width: 0;
+}
 
 /* ---------- simulated target applications ---------- */
 .app-screen,
