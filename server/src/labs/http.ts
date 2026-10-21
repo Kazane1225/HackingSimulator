@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { registerLab } from "../app.js";
-import { authRealLab } from "./auth.js";
+import { authRealLab, resetLoginAttempts } from "./auth.js";
 import { cmdiRealLab } from "./cmdi.js";
 import { cryptoRealLab } from "./crypto.js";
 import { csrfRealLab } from "./csrf.js";
@@ -161,6 +161,7 @@ function present(id: string, result: AttackResult): AppHttp {
       headers["Set-Cookie"] = "session=admin; HttpOnly";
       return text(200, `${body}\nSet-Cookie: session=admin; HttpOnly`, headers);
     }
+    if (body.includes("[429")) return text(429, body, headers);
     return text(401, body, headers);
   }
 
@@ -248,8 +249,15 @@ async function dispatch(lab: RealLab, hit: Hit): Promise<AppHttp> {
 
   if (id === "auth") {
     requireMethod(req, "POST");
+    if (rest === "/reset") {
+      resetLoginAttempts();
+      return text(204, "");
+    }
     if (rest !== "/login") return text(404, "not found");
-    return present(id, await lab.run(level, await readForm(req)));
+    const form = await readForm(req);
+    const header = req.headers["x-forwarded-for"];
+    const raw = (Array.isArray(header) ? header[0] : (header ?? "")).split(",")[0]?.trim() ?? "";
+    return present(id, await lab.run(level, { ...form, forwardedFor: raw }));
   }
 
   if (id === "jwt") {

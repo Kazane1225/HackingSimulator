@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import type { LabInput } from "./labs/runner.js";
-import { authRealLab } from "./labs/auth.js";
+import {
+  authRealLab,
+  LOCKED_MARK,
+  LOGIN_LOCK_AFTER,
+  LV1_PASSWORD,
+  LV2_PASSWORD,
+  LV5_PASSWORD,
+  PASSWORD_WORDLIST,
+  resetLoginAttempts,
+} from "./labs/auth.js";
 
-const ADMIN_PASSWORD = ["Spring", "2026", "!"].join("");
 const BENIGN: LabInput = { username: "guest", password: "guest", sessionId: "", mfaCode: "" };
+
+beforeEach(() => resetLoginAttempts());
 
 function mfaCodeFrom(output: string[]): string {
   const line = output.find((l) => l.includes("X-Debug-Mail"));
@@ -14,28 +24,28 @@ function mfaCodeFrom(output: string[]): string {
 }
 
 async function leakedLv4Code(): Promise<string> {
-  const probe = await authRealLab.run(4, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" });
+  const probe = await authRealLab.run(4, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" });
   return mfaCodeFrom(probe.output);
 }
 
 describe("auth (real)", () => {
   it("Lv1 is solved by its exploit", async () => {
-    const r = await authRealLab.run(1, { username: "admin", password: "password123", sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(1, { username: "admin", password: LV1_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, true);
   });
 
   it("Lv2 blocks the Lv1 exploit", async () => {
-    const r = await authRealLab.run(2, { username: "admin", password: "password123", sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(2, { username: "admin", password: LV1_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, false);
   });
 
   it("Lv2 is solved by its exploit", async () => {
-    const r = await authRealLab.run(2, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(2, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, true);
   });
 
   it("Lv3 blocks the Lv2 exploit", async () => {
-    const r = await authRealLab.run(3, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(3, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, false);
   });
 
@@ -50,21 +60,21 @@ describe("auth (real)", () => {
   });
 
   it("Lv4 is solved by its exploit (password spray, then replay the leaked MFA code)", async () => {
-    const probe = await authRealLab.run(4, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" });
+    const probe = await authRealLab.run(4, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(probe.solved, false);
     assert.equal(probe.progress, true);
     const code = mfaCodeFrom(probe.output);
-    const r = await authRealLab.run(4, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: code });
+    const r = await authRealLab.run(4, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: code });
     assert.equal(r.solved, true);
   });
 
   it("Lv5 resists the Lv1 exploit", async () => {
-    const r = await authRealLab.run(5, { username: "admin", password: "password123", sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(5, { username: "admin", password: LV1_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, false);
   });
 
   it("Lv5 resists the Lv2 exploit", async () => {
-    const r = await authRealLab.run(5, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" });
+    const r = await authRealLab.run(5, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" });
     assert.equal(r.solved, false);
   });
 
@@ -75,7 +85,7 @@ describe("auth (real)", () => {
 
   it("Lv5 resists the Lv4 exploit (leaked code was HMACed with a rotated, Lv5-only secret)", async () => {
     const code = await leakedLv4Code();
-    const r = await authRealLab.run(5, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: code });
+    const r = await authRealLab.run(5, { username: "admin", password: LV5_PASSWORD, sessionId: "", mfaCode: code });
     assert.equal(r.solved, false);
   });
 
@@ -122,8 +132,46 @@ describe("auth (real engine behaviour)", () => {
     assert.equal(r.solved, false);
   });
 
+  it("Lv1 wordlist succeeds only on the last entry", async () => {
+    const hits: string[] = [];
+    for (const password of PASSWORD_WORDLIST) {
+      const r = await authRealLab.run(1, { username: "admin", password, sessionId: "", mfaCode: "" });
+      if (r.solved) hits.push(password);
+    }
+    assert.deepEqual(hits, [LV1_PASSWORD]);
+  });
+
+  it("Lv2 straight wordlist locks before the real password is tried", async () => {
+    let lockedAt = -1;
+    for (let i = 0; i < PASSWORD_WORDLIST.length; i++) {
+      const r = await authRealLab.run(2, { username: "admin", password: PASSWORD_WORDLIST[i], sessionId: "", mfaCode: "" });
+      assert.equal(r.solved, false);
+      if (r.output.some((line) => line.includes(LOCKED_MARK))) {
+        lockedAt = i;
+        break;
+      }
+    }
+    assert.equal(lockedAt, LOGIN_LOCK_AFTER);
+    assert.ok(PASSWORD_WORDLIST.indexOf(LV2_PASSWORD) > lockedAt);
+  });
+
+  it("Lv2 accepts the wordlist password only from an unlocked X-Forwarded-For", async () => {
+    const ip = "198.51.100.20";
+    for (let i = 0; i < LOGIN_LOCK_AFTER; i++) {
+      const r = await authRealLab.run(2, { username: "admin", password: "nope", sessionId: "", mfaCode: "", forwardedFor: ip });
+      assert.equal(r.output.some((line) => line.includes(LOCKED_MARK)), false);
+    }
+    const locked = await authRealLab.run(2, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "", forwardedFor: ip });
+    assert.equal(locked.solved, false);
+    assert.match(locked.output.join("\n"), /\[429 LOCKED\]/);
+    const fresh = await authRealLab.run(2, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "", forwardedFor: "198.51.100.21" });
+    assert.equal(fresh.solved, true);
+    const old = await authRealLab.run(2, { username: "admin", password: LV1_PASSWORD, sessionId: "", mfaCode: "", forwardedFor: "198.51.100.22" });
+    assert.equal(old.solved, false);
+  });
+
   it("Lv5 rejects an arbitrary 6-digit MFA code even with the correct password", async () => {
-    const r = await authRealLab.run(5, { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "000000" });
+    const r = await authRealLab.run(5, { username: "admin", password: LV5_PASSWORD, sessionId: "", mfaCode: "000000" });
     assert.equal(r.solved, false);
   });
 });

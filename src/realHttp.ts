@@ -85,13 +85,17 @@ export function buildLabRequest(labId: string, level: Level, input: LabInput): L
       return { method: "GET", path: `/path${lv}/files?path=${encodeURIComponent(input.name ?? "")}`, headers: {} };
     case "csrf":
       return post(`/csrf${lv}/page`, { html: input.html ?? "" });
-    case "auth":
-      return post(`/auth${lv}/login`, {
+    case "auth": {
+      const req = post(`/auth${lv}/login`, {
         username: input.username ?? "",
         password: input.password ?? "",
         sessionId: input.sessionId ?? "",
         mfaCode: input.mfaCode ?? "",
       });
+      const forwarded = (input.forwardedFor ?? "").trim();
+      if (forwarded) req.headers["X-Forwarded-For"] = forwarded;
+      return req;
+    }
     case "ssrf":
       return post(`/ssrf${lv}/fetch`, { url: input.url ?? "" });
     case "upload":
@@ -241,12 +245,18 @@ function judgeAuth(res: HttpResponse): AttackResult {
   const output = linesOf(res.body);
   const solved = res.body.includes("管理コンソール / admin");
   const code = solved ? undefined : mfaCode(res);
+  const deny = output.find((line) => line.startsWith("[401") || line.startsWith("[429"));
+  const reason = deny?.replace(/^\[[^\]]+\]\s*/, "");
   return {
     solved,
     output,
     progress: !!code,
     loot: code ? [{ id: "auth-mfa", label: "MFA コード", value: code }] : undefined,
-    note: solved ? "admin アカウントのセッションを取得しました。" : code ? "パスワードは正しいですが MFA が必要です。" : "認証に失敗しました。",
+    note: solved
+      ? "admin アカウントのセッションを取得しました。"
+      : code
+        ? "パスワードは正しいですが MFA が必要です。"
+        : reason || "認証に失敗しました。",
   };
 }
 

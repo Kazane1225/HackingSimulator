@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { PASSWORD_WORDLIST } from "../labs/auth";
 import { decodeJwtPart, makeJwt, signHs256 } from "../labs/jwt";
 import type { AttackResult, LabInput, Level } from "../labs/types";
 import type { BrowserTab } from "./BrowserChrome";
@@ -424,8 +425,8 @@ const idor: LabUI = {
 };
 
 function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx) {
-  const [tries, setTries] = useState(0);
   const showMfa = level >= 4;
+  const showLeak = (level === 1 || level === 2) && !succeeded;
   return (
     <div className="app-login">
       <div className="app-brand">CorpID</div>
@@ -461,7 +462,6 @@ function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx)
           className="app-form"
           onSubmit={(e) => {
             e.preventDefault();
-            setTries((n) => n + 1);
             submit();
           }}
         >
@@ -482,12 +482,16 @@ function AuthApp({ inputs, setField, submit, result, succeeded, level }: AppCtx)
           <button type="submit" className="app-btn">ログイン</button>
         </form>
       )}
+      {showLeak && (
+        <details className="app-leak" open>
+          <summary className="mono">leak.txt</summary>
+          <p className="app-p">流出したパスワードの一覧です。</p>
+          <pre className="mono">{PASSWORD_WORDLIST.join("\n")}</pre>
+        </details>
+      )}
       {result && !succeeded && (
         <div className="app-alert">
           {result.note ?? "認証できませんでした。"}
-          {level <= 2 && tries >= 3 && (
-            <div className="app-alert-extra">この IP からの連続試行です。アカウント単位の制限はありません。</div>
-          )}
           {level >= 4 && result.output.some((line) => line.startsWith("X-Debug-Mail:")) && (
             <div className="app-alert-extra mono">{result.output.find((line) => line.startsWith("X-Debug-Mail:"))}</div>
           )}
@@ -504,6 +508,7 @@ const auth: LabUI = {
     "POST /login HTTP/1.1",
     "Host: accounts.example",
     `Cookie: session=${i.sessionId ?? ""}`,
+    ...(i.forwardedFor ? [`X-Forwarded-For: ${i.forwardedFor}`] : []),
     "Content-Type: application/x-www-form-urlencoded",
     "",
     `username=${i.username ?? ""}&password=${i.password ?? ""}&mfa=${i.mfaCode ?? ""}&reset=${i.sessionId ?? ""}`,

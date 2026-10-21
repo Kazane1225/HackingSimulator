@@ -1729,6 +1729,29 @@ a.owasp-cell:hover {
   margin-top: 6px;
   color: #79540c;
 }
+.app-leak {
+  margin-top: 16px;
+  border: 1px solid #e1d3a8;
+  border-radius: 3px;
+  background: #fffaf0;
+  padding: 8px 10px;
+  color: #5c5346;
+  font-size: 12px;
+}
+.app-leak summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.app-leak .app-p {
+  margin: 8px 0 6px;
+}
+.app-leak pre {
+  max-height: 9em;
+  margin: 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+}
 .app-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2041,6 +2064,37 @@ a.owasp-cell:hover {
 .param-add-row input:focus {
   border-color: var(--accent);
 }
+.dict-panel {
+  margin: 0 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  padding: 8px 10px;
+}
+.dict-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+.dict-list {
+  max-height: 7.5em;
+  margin: 6px 0;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.dict-panel .dim {
+  margin: 0 0 8px;
+  font-size: 11px;
+}
+.dict-rotate {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
 .proxy-actions {
   display: flex;
   gap: 7px;
@@ -2230,6 +2284,10 @@ a.owasp-cell:hover {
   font-size: 12px;
 }
 
+.console.dict-log {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
 .console,
 .code {
   margin: 0;

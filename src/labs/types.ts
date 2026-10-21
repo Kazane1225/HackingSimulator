@@ -55,6 +55,8 @@ export interface AttackResult {
   recap?: string[];
   /** Secrets discovered in this response (MFA codes, flags, related IDs, …). */
   loot?: LootItem[];
+  /** Show {@link output} as the primary response (a multi-attempt log). */
+  transcript?: boolean;
 }
 
 /** An item the learner can reuse in a later request. */

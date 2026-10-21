@@ -189,7 +189,7 @@ export const GLOSSARY: GlossaryTerm[] = [
     term: "ブルートフォース / パスワードスプレー",
     aliases: ["brute force", "password spraying", "辞書攻撃"],
     description:
-      "多数のパスワードを試す攻撃。パスワードスプレーは少数のありがちなパスワードを多数のアカウントへ試し、単純なロックアウトを避けます。",
+      "多数のパスワードを試す攻撃。パスワードスプレーは少数のありがちなパスワードを多数のアカウントへ試し、単純なロックアウトを避けます。ロックの相手を X-Forwarded-For にすると、試行ごとにヘッダを変えて同じ一覧を通せます。",
     labs: ["auth"],
   },
   {
@@ -197,7 +197,6 @@ export const GLOSSARY: GlossaryTerm[] = [
     aliases: ["session fixation"],
     description:
       "攻撃者が事前に知っているセッション ID を被害者に使わせ、ログイン後も ID が更新されない場合にそのログイン状態を奪う攻撃。",
-    labs: ["auth"],
   },
   {
     term: "MFA",
