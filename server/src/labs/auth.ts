@@ -2,27 +2,75 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 import type { AttackResult, LabInput, Level, LootItem, RealLab } from "./runner.js";
 
 /**
- * Real auth/session lab: Lv1-4 use genuinely weak, plain-text comparisons (the
- * actual vulnerability being taught), while Lv5 verifies the password with a
- * real scrypt-derived hash (timing-safe compare) and a real RFC 6238 TOTP
- * code generated from a secret that is never leaked anywhere. Objective:
- * obtain an authenticated admin session.
+ * Real auth/session lab.
+ * Lv1 accepts the last entry of the leaked wordlist and records no failures.
+ * Lv2 locks an IP after 5 failures, but takes that IP from X-Forwarded-For.
+ * The Lv2 password sits later in the same list, so one address locks first.
+ * Lv3 is a predictable reset token. Lv4 leaks a real TOTP after that password.
+ * Lv5 verifies a different password with scrypt and a never-leaked TOTP secret.
+ *
+ * PASSWORD_WORDLIST must stay aligned with src/labs/auth.ts.
  */
 
-// Built from fragments so training credentials are not mistaken for live
-// username/password pairs by repository secret scanners.
-const ADMIN_PASSWORD_LV1 = "password123";
-const ADMIN_PASSWORD = ["Spring", "2026", "!"].join("");
-const KNOWN_USERS = new Set(["admin"]);
+export const PASSWORD_WORDLIST = [
+  "123456",
+  "password",
+  "123456789",
+  "qwerty",
+  "12345678",
+  "abc123",
+  "password1",
+  "111111",
+  "iloveyou",
+  "admin",
+  "letmein",
+  "welcome",
+  "monkey",
+  "dragon",
+  "master",
+  "sunshine",
+  "princess",
+  "football",
+  "shadow",
+  "password123",
+] as const;
 
-function predictableResetToken(username: string): string {
-  return `reset-${username}`;
+export const LV1_PASSWORD = "password123";
+export const LV2_PASSWORD = "letmein";
+export const LV5_PASSWORD = ["Spring", "2026", "!"].join("");
+export const LOGIN_LOCK_AFTER = 5;
+export const LOCKED_MARK = "[429 LOCKED]";
+const LOCK_NOTE = "この IP からの試行はロックされています。";
+
+const KNOWN_USERS = new Set(["admin"]);
+const failuresByIp = new Map<string, number>();
+
+export function resetLoginAttempts(): void {
+  failuresByIp.clear();
+}
+
+function clientIp(input: LabInput): string {
+  const raw = (input.forwardedFor ?? "").split(",")[0]?.trim() ?? "";
+  return raw || "direct";
+}
+
+function failureKey(ip: string, username: string): string {
+  return `${ip}\n${username}`;
+}
+
+function lockedOut(username: string, ip: string): boolean {
+  return (failuresByIp.get(failureKey(ip, username)) ?? 0) >= LOGIN_LOCK_AFTER;
+}
+
+function recordFailure(username: string, ip: string): void {
+  const key = failureKey(ip, username);
+  failuresByIp.set(key, (failuresByIp.get(key) ?? 0) + 1);
 }
 
 // --- Lv5: real scrypt password hash, decided by a genuine constant-time compare. ---
 const SCRYPT_SALT = randomBytes(16);
 const SCRYPT_KEYLEN = 32;
-const ADMIN_HASH = scryptSync(ADMIN_PASSWORD, SCRYPT_SALT, SCRYPT_KEYLEN);
+const ADMIN_HASH = scryptSync(LV5_PASSWORD, SCRYPT_SALT, SCRYPT_KEYLEN);
 
 function verifyPasswordScrypt(password: string): boolean {
   if (password.length === 0) return false;
@@ -66,27 +114,40 @@ function totpValid(secret: Buffer, code: string): boolean {
   return false;
 }
 
+function predictableResetToken(username: string): string {
+  return `reset-${username}`;
+}
+
 function run(level: Level, input: LabInput): AttackResult {
   const username = (input.username ?? "").trim();
   const password = input.password ?? "";
   const sessionId = (input.sessionId ?? "").trim();
   const mfaCode = (input.mfaCode ?? "").trim();
+  const ip = clientIp(input);
   let taken = false;
+  let locked = false;
   let reason = "";
   let debugMail: string | null = null;
   let leakedCode: string | null = null;
 
   if (level === 1) {
-    taken = username === "admin" && password === ADMIN_PASSWORD_LV1;
-    reason = taken ? "弱いパスワードでログインしました。" : "認証に失敗しました。";
+    taken = username === "admin" && password === LV1_PASSWORD;
+    reason = taken
+      ? "流出一覧に含まれるパスワードでログインしました。失敗回数は記録していません。"
+      : "認証に失敗しました。";
   } else if (level === 2) {
-    if (!KNOWN_USERS.has(username)) {
+    if (lockedOut(username, ip)) {
+      locked = true;
+      reason = LOCK_NOTE;
+    } else if (!KNOWN_USERS.has(username)) {
+      recordFailure(username, ip);
       reason = "ユーザーが存在しません。";
-    } else if (password !== ADMIN_PASSWORD) {
+    } else if (password !== LV2_PASSWORD) {
+      recordFailure(username, ip);
       reason = "パスワードが違います。";
     } else {
       taken = true;
-      reason = "ユーザー列挙後、ロックアウト対象外の低頻度試行で弱いパスワードを特定しました。";
+      reason = "この IP ではまだロック前で、流出一覧のパスワードが一致しました。";
     }
   } else if (level === 3) {
     taken = username === "admin" && sessionId === predictableResetToken("admin");
@@ -94,11 +155,11 @@ function run(level: Level, input: LabInput): AttackResult {
       ? "予測可能なリセットトークンでパスワードを再設定し、ログインしました。"
       : "パスワードは強化済みです。リセットトークンが必要です。";
   } else if (level === 4) {
-    const passwordOk = username === "admin" && password === ADMIN_PASSWORD;
+    const passwordOk = username === "admin" && password === LV2_PASSWORD;
     const mfaOk = passwordOk && totpValid(MFA_SECRET_LEAKY, mfaCode);
     taken = mfaOk;
     if (taken) {
-      reason = "パスワードスプレー後、デバッグ応答に出た MFA コードでログインしました。";
+      reason = "Lv2 で当たったパスワードのあと、デバッグ応答に出た MFA コードでログインしました。";
     } else if (passwordOk) {
       leakedCode = totpNow(MFA_SECRET_LEAKY);
       reason = "パスワードは正しいですが MFA が必要です。";
@@ -109,25 +170,40 @@ function run(level: Level, input: LabInput): AttackResult {
   } else {
     const passwordOk = username === "admin" && verifyPasswordScrypt(password);
     taken = passwordOk && totpValid(MFA_SECRET_SECURE, mfaCode);
-    reason = "強固なパスワード、再発行されるセッション、MFA、回復フローの再認証により拒否しました。";
+    reason = "強固なパスワード、サーバが観測した接続元での制限、MFA、回復フローの再認証により拒否しました。";
   }
 
-  const loot: LootItem[] | undefined = leakedCode ? [{ id: "auth-mfa", label: "MFA コード", value: leakedCode }] : undefined;
+  const statusLine = locked
+    ? `${LOCKED_MARK} ${LOCK_NOTE}`
+    : taken
+      ? "[200 OK] 管理コンソール / admin としてログイン"
+      : `[401 UNAUTHORIZED] ${reason}`;
+
+  const loot: LootItem[] | undefined = leakedCode
+    ? [{ id: "auth-mfa", label: "MFA コード", value: leakedCode }]
+    : taken && (level === 1 || level === 2)
+      ? [{ id: `auth-password-lv${level}`, label: `Lv${level} のパスワード`, value: password }]
+      : undefined;
 
   return {
     solved: taken,
     output: [
       "POST /login",
       `username=${username || "(空)"} reset=${sessionId || "(なし)"} mfa=${mfaCode || "(なし)"}`,
+      ...(level === 2 ? [`X-Forwarded-For: ${ip}`] : []),
       ...(debugMail ? [debugMail] : []),
-      taken ? "[200 OK] 管理コンソール / admin としてログイン" : `[401 UNAUTHORIZED] ${reason}`,
+      statusLine,
     ],
     note: taken ? "admin アカウントのセッションを取得しました。" : reason,
     progress: level === 4 && !!debugMail,
     recap: taken
       ? level === 4
-        ? ["Lv2 のパスワードで MFA を要求させた", "401 のデバッグメールにコードが出た", "そのコードでログインした"]
-        : ["認証の抜けを突いた", "admin セッションが発行された"]
+        ? ["Lv2 で当たったパスワードで MFA を要求させた", "401 のデバッグメールにコードが出た", "そのコードでログインした"]
+        : level === 2
+          ? ["この IP の失敗回数がロック未満だった", "流出一覧のパスワードが一致した", "admin セッションが発行された"]
+          : level === 1
+            ? ["流出一覧のパスワードが一致した", "失敗回数は記録されていない", "admin セッションが発行された"]
+            : ["認証の抜けを突いた", "admin セッションが発行された"]
       : undefined,
     loot,
   };

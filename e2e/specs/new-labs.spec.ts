@@ -40,15 +40,33 @@ test.describe("new vulnerability labs — target app", () => {
     await expect(app.getByText("パスワードが違います。")).toBeVisible();
   });
 
-  test("authentication Lv1 accepts a weak admin password", async ({ lab }) => {
+  test("authentication Lv1 is solved by sending the leaked wordlist", async ({ lab }) => {
     await lab.goto("auth");
-    await lab.setIntercept(false);
+    await lab.setParam("username", "admin");
     const app = await lab.openApp();
-    await app.getByLabel("ユーザー名").fill("admin");
-    await app.getByLabel("パスワード").fill("password123");
-    await app.getByRole("button", { name: "ログイン" }).click();
+    await expect(app.getByText("leak.txt")).toBeVisible();
+    await lab.openPane("proxy");
+    await lab.pane("proxy").getByRole("button", { name: "一覧を送る" }).click();
     await expect(lab.statusBadge).toHaveText(STATUS.success);
+    await expect(lab.page.getByTestId("dict-log")).toContainText("password123");
+    await expect(lab.page.getByTestId("dict-log")).toContainText("200");
     await expect(app.getByText("admin としてログイン中")).toBeVisible();
+  });
+
+  test("authentication Lv2 locks one address until X-Forwarded-For changes", async ({ lab }) => {
+    await lab.goto("auth");
+    await lab.selectLevel(2);
+    await lab.setParam("username", "admin");
+    await lab.pane("proxy").getByRole("button", { name: "一覧を送る" }).click();
+    await expect(lab.statusBadge).toHaveText(STATUS.progress);
+    await expect(lab.page.getByTestId("dict-log")).toContainText("429");
+    await expect(lab.page.getByTestId("dict-log")).toContainText("残り");
+
+    await lab.pane("proxy").getByRole("checkbox", { name: "試行ごとに X-Forwarded-For を変える" }).check();
+    await lab.pane("proxy").getByRole("button", { name: "一覧を送る" }).click();
+    await expect(lab.statusBadge).toHaveText(STATUS.success);
+    await expect(lab.page.getByTestId("dict-log")).toContainText("letmein");
+    await expect(lab.page.getByTestId("dict-log")).toContainText("10.0.0.");
   });
 
   test("JWT Lv1 accepts an unsigned admin token", async ({ lab }) => {
@@ -92,7 +110,7 @@ test.describe("new vulnerability labs — target app", () => {
     await lab.setIntercept(false);
     const app = await lab.openApp();
     await app.getByLabel("ユーザー名").fill("admin");
-    await app.getByLabel("パスワード").fill("Spring2026!");
+    await app.getByLabel("パスワード").fill("letmein");
     await app.getByRole("button", { name: "ログイン" }).click();
     await expect(app.getByText("パスワードは正しいですが MFA が必要です。")).toBeVisible();
     await expect(app.getByText(/Your MFA code is 482016/)).toBeVisible();

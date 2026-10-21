@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { LOCKED_MARK, LOGIN_LOCK_AFTER, PASSWORD_WORDLIST, resetLoginAttempts } from "../labs/auth";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { useLoot } from "../loot";
@@ -38,6 +39,33 @@ function defaultInputs(lab: Lab): LabInput {
   return Object.fromEntries(lab.fields.filter((f) => !f.hidden).map((f) => [f.name, f.default ?? ""]));
 }
 
+function dictionaryStory(
+  level: Level,
+  solved: boolean,
+  locked: boolean,
+  winning: string,
+  index: number,
+): Pick<AttackResult, "note" | "recap" | "progress"> {
+  if (solved && level === 1) {
+    return {
+      note: `${index} 件目の ${winning} でログインしました。${index - 1} 回失敗してもロックされません。`,
+      recap: [
+        "leak.txt を username のユーザーに順に送った",
+        "失敗回数を記録していないので最後まで届いた",
+        "一覧の中のパスワードでセッションが発行された",
+      ],
+    };
+  }
+  if (solved) {
+    return {
+      note: `${index} 件目の ${winning} でログインしました。試行ごとに X-Forwarded-For が変わるため、${LOGIN_LOCK_AFTER} 回のロックに達しません。`,
+      recap: ["同一 IP では 5 回失敗でロックされる", "X-Forwarded-For を試行ごとに変えた", "一覧の後半のパスワードでセッションが発行された"],
+    };
+  }
+  if (locked) return { progress: true, note: `同一 IP で ${LOGIN_LOCK_AFTER} 回失敗し、ロックされました。` };
+  return { note: "一覧のどのパスワードでもログインできませんでした。username を確認してください。" };
+}
+
 function assembledDuplicatesOutput(assembled: string | undefined, output: string[]): boolean {
   const a = assembled?.trim() ?? "";
   if (!a) return true;
@@ -64,6 +92,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [extraParams, setExtraParams] = useState<string[]>([]);
   const [newParamName, setNewParamName] = useState("");
   const [focusField, setFocusField] = useState<string | null>(null);
+  const [rotateIp, setRotateIp] = useState(false);
+  const [dictRunning, setDictRunning] = useState(false);
   const { items: loot, ingest } = useLoot();
 
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
@@ -72,6 +102,13 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const viaReal = useRealLabs().includes(id);
   // Bumped whenever the pending result is no longer wanted (new request, level change, reset).
   const requestSeq = useRef(0);
+  const dictSeq = useRef(0);
+
+  const resetAuthAttempts = (lv: Level = level) => {
+    if (id !== "auth") return;
+    resetLoginAttempts();
+    if (viaReal) void executeLabRequest("api", { method: "POST", path: `/auth/lv${lv}/reset`, headers: {} });
+  };
 
   const spec = lab.levels[level];
   const shownHints = Math.min(hintsShown[level] ?? 1, spec.hints.length);
@@ -95,6 +132,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   };
 
   const selectLevel = (lv: Level) => {
+    resetAuthAttempts(lv);
     setLevel(lv);
     setRevealed([]);
     setExtraParams([]);
@@ -171,6 +209,89 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
           requestInputs,
         );
       });
+  };
+
+  const sendDictionary = async () => {
+    const seq = ++requestSeq.current;
+    const run = ++dictSeq.current;
+    setDictRunning(true);
+    const rotate = level === 2 && rotateIp;
+    const username = inputs.username ?? "";
+    const lines: string[] = [];
+    let solved = false;
+    let locked = false;
+    let winning = "";
+    let winningIndex = 0;
+    try {
+      for (let i = 0; i < PASSWORD_WORDLIST.length; i++) {
+        if (seq !== requestSeq.current) return;
+        const password = PASSWORD_WORDLIST[i];
+        const forwardedFor = rotate ? `10.0.0.${i + 1}` : "";
+        const attempt: LabInput = { ...inputs, username, password, sessionId: "", mfaCode: "", forwardedFor };
+        let status = 401;
+        let reason = "認証に失敗しました。";
+        if (!viaReal) {
+          const one = lab.run(level, attempt);
+          status = one.solved ? 200 : one.output.some((line) => line.includes(LOCKED_MARK)) ? 429 : 401;
+          reason = status === 200 ? "ログインしました。" : (one.note ?? reason);
+          solved = one.solved;
+        } else {
+          let http: HttpResponse;
+          try {
+            http = await executeLabRequest("api", buildLabRequest(id, level, attempt));
+          } catch (err: unknown) {
+            if (seq !== requestSeq.current) return;
+            setHttpResponse(null);
+            applyResult(
+              {
+                solved: false,
+                output: [`実サーバーに接続できませんでした: ${err instanceof Error ? err.message : String(err)}`],
+                note: "実サーバーが起動しているか確認してください（docker compose -f docker-compose.real.yml up）。",
+              },
+              attempt,
+            );
+            return;
+          }
+          if (seq !== requestSeq.current) return;
+          status = http.status;
+          const judged = judgeLabResponse(id, level, attempt, http);
+          solved = judged.solved;
+          reason = status === 200 ? "ログインしました。" : (judged.note ?? reason);
+        }
+        const ip = forwardedFor || "direct";
+        lines.push(`${String(i + 1).padStart(2, "0")}  ${status}  ${ip.padEnd(12)}  ${password.padEnd(14)}  ${reason}`);
+        if (status === 429) locked = true;
+        if (solved) {
+          winning = password;
+          winningIndex = i + 1;
+        }
+        if (solved || status === 429) break;
+      }
+      if (seq !== requestSeq.current) return;
+      if (lines.length < PASSWORD_WORDLIST.length) {
+        const why = solved ? "当たったので" : "ロックされたので";
+        lines.push(`残り ${PASSWORD_WORDLIST.length - lines.length} 件は、${why}送っていません。`);
+      }
+      const story = dictionaryStory(level, solved, locked, winning, winningIndex);
+      setHttpResponse(null);
+      applyResult(
+        {
+          solved,
+          progress: story.progress,
+          transcript: true,
+          output: lines,
+          note: story.note,
+          recap: story.recap,
+          loot:
+            solved && (level === 1 || level === 2)
+              ? [{ id: `auth-password-lv${level}`, label: `Lv${level} のパスワード`, value: winning }]
+              : undefined,
+        },
+        { ...inputs, username, password: winning },
+      );
+    } finally {
+      if (run === dictSeq.current) setDictRunning(false);
+    }
   };
 
   /** The target app was used normally: hold the request if intercepting. */
@@ -426,6 +547,25 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                 </div>
               )}
             </div>
+            {id === "auth" && (level === 1 || level === 2) && (
+              <div className="dict-panel">
+                <div className="dict-panel-head">
+                  <span className="mono">leak.txt</span>
+                  <span className="dim">{PASSWORD_WORDLIST.length} 件</span>
+                </div>
+                <pre className="mono dict-list">{PASSWORD_WORDLIST.join("\n")}</pre>
+                <p className="dim">username に入っているユーザーへ、上から順に POST /login します。</p>
+                {level === 2 && (
+                  <label className="dict-rotate">
+                    <input type="checkbox" checked={rotateIp} onChange={(e) => setRotateIp(e.target.checked)} />
+                    試行ごとに X-Forwarded-For を変える
+                  </label>
+                )}
+                <button type="button" className="btn" data-testid="dict-send" disabled={dictRunning} onClick={() => void sendDictionary()}>
+                  <Play width={13} height={13} /> {dictRunning ? "送信中…" : "一覧を送る"}
+                </button>
+              </div>
+            )}
             <div className="proxy-actions">
               <button type="button" className="btn btn-accent" onClick={() => forward()}>
                 <Play width={13} height={13} /> Forward
@@ -438,6 +578,8 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                   setRevealed([]);
                   setExtraParams([]);
                   setNewParamName("");
+                  setRotateIp(false);
+                  resetAuthAttempts();
                   clear();
                 }}
               >
@@ -471,7 +613,9 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                     )}
                   </div>
                 )}
-                {httpResponse ? (
+                {result.transcript ? (
+                  <pre className="console dict-log" data-testid="dict-log">{result.output.join("\n")}</pre>
+                ) : httpResponse ? (
                   <pre className="console" data-testid="http-response">{formatRawResponse(httpResponse)}</pre>
                 ) : (
                   <>

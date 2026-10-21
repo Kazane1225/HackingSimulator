@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 import { createApp, resetLabs } from "./app.js";
+import { LOGIN_LOCK_AFTER, LV2_PASSWORD, PASSWORD_WORDLIST, resetLoginAttempts } from "./labs/auth.js";
 import { registerHttpLabs } from "./labs/http.js";
 import { CRYPTO_VAULT } from "./labs/crypto.js";
 import { integrityExploits } from "./labs/integrity.js";
@@ -9,7 +10,6 @@ import { buildJwtExploitTokens } from "./labs/jwt.js";
 import type { LabInput, Level } from "./labs/runner.js";
 import { markupFires } from "./labs/xss.js";
 
-const ADMIN_PASSWORD = ["Spring", "2026", "!"].join("");
 const BOB_ORDER = "ORD-B0B-42";
 const ATTACKER_CSRF = "csrf-issued-attacker";
 const FORM = (extra: string) =>
@@ -60,9 +60,9 @@ const exploits: Record<LabId, Record<1 | 2 | 3 | 4, LabInput>> = {
   },
   auth: {
     1: { username: "admin", password: "password123", sessionId: "", mfaCode: "" },
-    2: { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" },
+    2: { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" },
     3: { username: "admin", password: "x", sessionId: "reset-admin", mfaCode: "" },
-    4: { username: "admin", password: ADMIN_PASSWORD, sessionId: "", mfaCode: "" },
+    4: { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "" },
   },
   jwt: {
     1: { token: jwtTokens.none },
@@ -203,6 +203,7 @@ describe("real HTTP targets", () => {
     } else if (id === "auth") {
       path = `/auth${lv}/login`;
       headers["Content-Type"] = "application/x-www-form-urlencoded";
+      if (input.forwardedFor) headers["X-Forwarded-For"] = input.forwardedFor;
       body = new URLSearchParams({
         username: input.username ?? "",
         password: input.password ?? "",
@@ -330,6 +331,28 @@ describe("real HTTP targets", () => {
     const res = await send("sqli", 1, { username: "admin'", password: "x" });
     assert.match(res.body, /SQL ERROR/);
     assert.equal(res.status, 200);
+  });
+
+  it("auth Lv2 locks one address and accepts the later wordlist password from another", async () => {
+    resetLoginAttempts();
+    const ip = "198.51.100.70";
+    for (let i = 0; i < LOGIN_LOCK_AFTER; i++) {
+      const res = await send("auth", 2, { username: "admin", password: PASSWORD_WORDLIST[i], sessionId: "", mfaCode: "", forwardedFor: ip });
+      assert.equal(res.status, 401);
+    }
+    const locked = await send("auth", 2, { username: "admin", password: LV2_PASSWORD, sessionId: "", mfaCode: "", forwardedFor: ip });
+    assert.equal(locked.status, 429);
+    assert.equal(observed("auth", 2, locked.body), false);
+    const rotated = await send("auth", 2, {
+      username: "admin",
+      password: LV2_PASSWORD,
+      sessionId: "",
+      mfaCode: "",
+      forwardedFor: "198.51.100.71",
+    });
+    assert.equal(rotated.status, 200);
+    assert.equal(observed("auth", 2, rotated.body, rotated.headers), true);
+    resetLoginAttempts();
   });
 
   it("auth sets a session cookie when the login succeeds", async () => {
