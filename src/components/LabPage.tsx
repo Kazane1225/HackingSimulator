@@ -15,6 +15,7 @@ import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
 import { LabBrief } from "./LabBrief";
 import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
+import { RemediationPanel } from "./RemediationPanel";
 import { XssPreview } from "./XssPreview";
 import { targetChannel, type TargetState } from "../target/link";
 
@@ -32,6 +33,8 @@ interface Props {
   lab: Lab;
   isSolved: (labId: string, level: Level) => boolean;
   markSolved: (labId: string, level: Level) => void;
+  remediationCompleted: boolean;
+  markRemediated: (labId: string) => void;
 }
 
 function defaultInputs(lab: Lab): LabInput {
@@ -44,7 +47,7 @@ function assembledDuplicatesOutput(assembled: string | undefined, output: string
   return output.join("\n").includes(a);
 }
 
-export function LabPage({ lab, isSolved, markSolved }: Props) {
+export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markRemediated }: Props) {
   const id = lab.meta.id;
   const ui = LAB_UI[id];
   const firstUnsolved = LEVELS.find((lv) => lv < 5 && !isSolved(id, lv)) ?? 5;
@@ -64,6 +67,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
   const [extraParams, setExtraParams] = useState<string[]>([]);
   const [newParamName, setNewParamName] = useState("");
   const [focusField, setFocusField] = useState<string | null>(null);
+  const [learningMode, setLearningMode] = useState<"attack" | "remediation">("attack");
   const { items: loot, ingest } = useLoot();
 
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
@@ -289,7 +293,15 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
             </div>
           </div>
         </div>
-        <div className="segmented" role="tablist" aria-label="セキュリティレベル">
+        <div className="segmented lab-mode-switch" role="tablist" aria-label="学習モード">
+          <button role="tab" aria-selected={learningMode === "attack"} className={`seg ${learningMode === "attack" ? "active" : ""}`} onClick={() => setLearningMode("attack")}>
+            攻撃演習
+          </button>
+          <button role="tab" aria-selected={learningMode === "remediation"} className={`seg ${learningMode === "remediation" ? "active" : ""}`} onClick={() => setLearningMode("remediation")} data-testid="remediation-tab">
+            {remediationCompleted && <Check width={13} height={13} />} 修正演習
+          </button>
+        </div>
+        {learningMode === "attack" && <div className="segmented" role="tablist" aria-label="セキュリティレベル">
           {LEVELS.map((lv) => (
             <button
               key={lv}
@@ -303,10 +315,12 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
               Lv{lv}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
-      <div className="defense-bar">
+      {learningMode === "remediation" ? (
+        <RemediationPanel lab={lab} completed={remediationCompleted} onComplete={() => markRemediated(id)} />
+      ) : <><div className="defense-bar">
         <span className="defense-tag mono">防御 Lv{level}</span>
         <span>{spec.defense}</span>
       </div>
@@ -605,6 +619,27 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
                       </Fragment>
                     ))}
                   </dl>
+                  {lab.meta.standards.cves && lab.meta.standards.cves.length > 0 && (
+                    <>
+                      <div className="meta-title">実在するCVE事例</div>
+                      <div className="cve-list" data-testid="cve-list">
+                        {lab.meta.standards.cves.map((cve) => (
+                          <article className="cve-card" key={cve.id}>
+                            <div className="cve-card-head">
+                              <a href={cve.url} target="_blank" rel="noopener noreferrer" className="mono">
+                                {cve.id}
+                              </a>
+                              <span className="cve-relation">
+                                {cve.relation === "direct" ? "同じ攻撃メカニズム" : "同じ弱点クラスの事例"}
+                              </span>
+                            </div>
+                            <strong>{cve.title}</strong>
+                            <p>{cve.summary}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <div className="meta-title">参考資料</div>
                   <ul className="ref-list">
                     {lab.meta.references.map((r) => (
@@ -623,7 +658,7 @@ export function LabPage({ lab, isSolved, markSolved }: Props) {
             )}
           </div>
         </section>
-      </div>
+      </div></>}
     </div>
   );
 }

@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Glossary } from "./components/Glossary";
 import { Home } from "./components/Home";
 import { LabPage } from "./components/LabPage";
+import { MissionPage } from "./components/MissionPage";
 import { Sidebar } from "./components/Sidebar";
 import { StoreWindow } from "./components/StoreWindow";
 import { Logo } from "./components/icons";
 import { LABS, findLab } from "./labs";
+import { useLearningProgress } from "./learningProgress";
 import { useProgress } from "./progress";
 
 /** Hash-based routing so deep links work on GitHub Pages without a 404 shim. */
@@ -22,6 +24,7 @@ function useHashRoute(): string {
 export function App() {
   const route = useHashRoute();
   const { progress, markSolved, isSolved, reset } = useProgress();
+  const { learningProgress, markRemediated, completeMissionStep, resetLearning } = useLearningProgress();
 
   const labMatch = route.match(/^\/lab\/([\w-]+)/);
   const lab = labMatch ? findLab(labMatch[1]) : undefined;
@@ -51,6 +54,8 @@ export function App() {
             </>
           ) : route === "/glossary" ? (
             <span>用語集</span>
+          ) : route === "/mission" ? (
+            <span>Harbor侵害調査</span>
           ) : (
             <span>ダッシュボード</span>
           )}
@@ -67,14 +72,39 @@ export function App() {
       </header>
 
       <div className="workspace">
-        <Sidebar activeId={lab?.meta.id} progress={progress} glossaryActive={route === "/glossary"} />
+        <Sidebar
+          activeId={lab?.meta.id}
+          progress={progress}
+          glossaryActive={route === "/glossary"}
+          missionActive={route === "/mission"}
+        />
         <main className="main">
           {lab ? (
-            <LabPage key={lab.meta.id} lab={lab} isSolved={isSolved} markSolved={markSolved} />
+            <LabPage
+              key={lab.meta.id}
+              lab={lab}
+              isSolved={isSolved}
+              markSolved={markSolved}
+              remediationCompleted={learningProgress.remediatedLabIds.includes(lab.meta.id)}
+              markRemediated={markRemediated}
+            />
           ) : route === "/glossary" ? (
             <Glossary />
+          ) : route === "/mission" ? (
+            <MissionPage
+              progress={progress}
+              learningProgress={learningProgress}
+              completeStep={completeMissionStep}
+            />
           ) : (
-            <Home progress={progress} onReset={reset} />
+            <Home
+              progress={progress}
+              remediatedCount={learningProgress.remediatedLabIds.length}
+              onReset={() => {
+                reset();
+                resetLearning();
+              }}
+            />
           )}
         </main>
       </div>

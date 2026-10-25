@@ -84,11 +84,31 @@ export interface Reference {
   url: string;
 }
 
+export type CveRelation = "direct" | "same-class";
+
+/** A real-world vulnerability used to connect the fictional lab to practice. */
+export interface CveReference {
+  id: `CVE-${number}-${number}`;
+  title: string;
+  summary: string;
+  url: string;
+  /** `direct` means the lab reproduces the mechanism; `same-class` is illustrative. */
+  relation: CveRelation;
+}
+
+/** What an engineer should verify after replacing the vulnerable implementation. */
+export interface RemediationSpec {
+  objective: string;
+  checklist: string[];
+  reviewNote: string;
+}
+
 /** Where the vulnerability class sits in common taxonomies. */
 export interface Standards {
   /** OWASP Top 10:2021 category. */
   owasp: { code: string; name: string; url: string };
   cwe: { id: number; name: string }[];
+  cves?: CveReference[];
 }
 
 export interface LabMeta {
@@ -114,6 +134,8 @@ export interface Lab {
   explanation: string;
   /** Per-level defense text, hints, solutions and pseudo-code. */
   levels: Record<Level, LevelSpec>;
+  /** Interactive secure-code review criteria. */
+  remediation?: RemediationSpec;
   /** Simulate the vulnerable backend at `level` for the given `input`. */
   run(level: Level, input: LabInput): AttackResult;
   /**
