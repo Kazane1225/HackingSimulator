@@ -14,8 +14,9 @@ import { ssrfLab } from "./ssrf";
 import type { Lab } from "./types";
 import { uploadLab } from "./upload";
 import { xssLab } from "./xss";
+import { LEARNING_CONTENT } from "../learningContent";
 
-export const LABS: Lab[] = [
+const BASE_LABS: Lab[] = [
   sqliLab,
   xssLab,
   cmdiLab,
@@ -32,6 +33,19 @@ export const LABS: Lab[] = [
   integrityLab,
   loggingLab,
 ];
+
+export const LABS: Lab[] = BASE_LABS.map((lab) => {
+  const learning = LEARNING_CONTENT[lab.meta.id];
+  if (!learning) return lab;
+  return {
+    ...lab,
+    remediation: learning.remediation,
+    meta: {
+      ...lab.meta,
+      standards: { ...lab.meta.standards, cves: learning.cves },
+    },
+  };
+});
 
 export function findLab(id: string): Lab | undefined {
   return LABS.find((l) => l.meta.id === id);

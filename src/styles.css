@@ -1,3 +1,101 @@
+/* ---------- defensive learning & chained mission ---------- */
+.learning-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
+.learning-path-card {
+  min-height: 150px;
+  padding: 18px 20px;
+  border-right: 1px solid var(--line);
+}
+.learning-path-card:last-child { border-right: 0; }
+.learning-path-card h2 { margin: 3px 0 6px; }
+.learning-path-card p { color: var(--dim); max-width: 64ch; }
+.learning-path-kicker { color: var(--accent); font-size: 11px; letter-spacing: .12em; }
+.mission-card:hover { background: rgba(255, 255, 255, .025); }
+.mission-card .btn { display: inline-flex; margin-top: 6px; }
+.lab-mode-switch { margin-left: auto; }
+
+.remediation { display: grid; gap: 12px; }
+.remediation-copy { padding: 16px; }
+.review-checklist { margin: 8px 0 0; padding-left: 20px; }
+.patch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.patch-card {
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.patch-card:hover { border-color: var(--faint); }
+.patch-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.patch-card .code { margin: 0; border: 0; border-radius: 0; max-height: 230px; overflow: auto; }
+.regression-panel .pane-head { justify-content: space-between; }
+.regression-results { padding: 12px; display: grid; gap: 6px; }
+.regression-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+}
+.regression-row.ok { color: var(--ok); }
+.regression-row.ng { color: var(--ng); }
+
+.mission-page { max-width: 980px; margin: 0 auto; }
+.mission-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--dim);
+}
+.mission-summary.complete { color: var(--ok); border-color: var(--ok); }
+.mission-complete { margin-bottom: 16px; }
+.mission-timeline { display: grid; gap: 12px; }
+.mission-step { display: grid; grid-template-columns: 48px 1fr; position: relative; overflow: visible; }
+.mission-step.locked { opacity: .62; }
+.mission-step-marker {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  margin: 12px auto;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--dim);
+  font-family: var(--mono);
+}
+.mission-step.active .mission-step-marker { color: var(--accent); border-color: var(--accent); }
+.mission-step.done .mission-step-marker { color: var(--ok); border-color: var(--ok); }
+.mission-step-content { min-width: 0; border-left: 1px solid var(--line); }
+.mission-step-body { padding: 14px 16px 16px; }
+.mission-objective { padding: 9px 11px; background: var(--bg-sunken); border-left: 2px solid var(--accent); }
+.mission-objective .mono, .mission-artifact .mono { color: var(--accent); margin-right: 8px; font-size: 11px; }
+.mission-actions { display: flex; gap: 8px; margin-top: 12px; }
+.mission-requirement { margin-bottom: 0; }
+.mission-artifact { margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(95, 184, 120, .35); background: var(--ok-soft); }
+.mission-artifact p { margin: 3px 0 0; color: var(--dim); }
+
+.cve-list { display: grid; gap: 8px; margin: 8px 0 16px; }
+.cve-card { padding: 10px 12px; border: 1px solid var(--line-soft); background: var(--bg-sunken); }
+.cve-card-head { display: flex; gap: 8px; align-items: center; margin-bottom: 5px; }
+.cve-relation { padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); font-size: 10px; }
+.cve-card p { margin: 0; color: var(--dim); }
+
+@media (max-width: 760px) {
+  .learning-paths, .patch-grid { grid-template-columns: 1fr; }
+  .learning-path-card { border-right: 0; border-bottom: 1px solid var(--line); }
+  .learning-path-card:last-child { border-bottom: 0; }
+  .lab-toolbar { flex-wrap: wrap; }
+  .lab-mode-switch { margin-left: 0; order: 3; width: 100%; }
+  .lab-mode-switch .seg { flex: 1; }
+  .mission-step { grid-template-columns: 38px 1fr; }
+  .mission-actions { flex-wrap: wrap; }
+}
 :root {
   --bg: #1b1d21;
   --bg-sunken: #16181b;

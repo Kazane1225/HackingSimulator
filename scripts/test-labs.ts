@@ -11,6 +11,7 @@ import { LEARNING_TRACKS, OWASP_TOP10_2021 } from "../src/curriculum";
 import { GLOSSARY } from "../src/glossary";
 import { LABS } from "../src/labs";
 import type { Level } from "../src/labs/types";
+import { HARBOR_MISSION } from "../src/missions";
 
 let failures = 0;
 const check = (cond: boolean, msg: string) => {
@@ -50,6 +51,15 @@ for (const lab of LABS) {
   console.log(`\n[${id}] ${lab.meta.title}`);
 
   check(lab.meta.standards.cwe.length > 0, "has CWE classification");
+  check(!!lab.remediation, "has remediation exercise");
+  check((lab.remediation?.checklist.length ?? 0) >= 3, "remediation has review checklist");
+  const cves = lab.meta.standards.cves ?? [];
+  check(cves.length > 0, "has a real-world CVE example");
+  for (const cve of cves) {
+    check(/^CVE-\d{4}-\d{4,}$/.test(cve.id), `${cve.id} has a valid CVE id`);
+    check(cve.url.startsWith("https://"), `${cve.id} has an https reference`);
+    check(cve.relation === "direct" || cve.relation === "same-class", `${cve.id} declares its relation`);
+  }
   check(lab.meta.references.length > 0 && lab.meta.references.every((r) => r.url.startsWith("https://")), "has https references");
   for (const lv of [1, 2, 3, 4, 5] as Level[]) {
     const n = lab.levels[lv].hints.length;
@@ -71,6 +81,19 @@ for (const lab of LABS) {
 
   for (const lv of [1, 2, 3, 4] as const) {
     check(!lab.run(5, exploits[lv]).solved, `Lv5 resists the Lv${lv} exploit`);
+  }
+}
+
+console.log("\n[mission]");
+const missionIds = HARBOR_MISSION.map((step) => step.id);
+check(new Set(missionIds).size === missionIds.length, "mission step ids are unique");
+check(HARBOR_MISSION.every((step, index) => step.number === index + 1), "mission step numbers are sequential");
+const missionLoot = new Set(["auth-mfa", "jwt-oct", "ssrf-access-key", "misconf-flag", "logging-flag"]);
+for (const step of HARBOR_MISSION) {
+  check(ids.includes(step.requirement.labId), `mission step "${step.id}" points to an existing lab`);
+  check(step.requirement.level >= 1 && step.requirement.level <= 5, `mission step "${step.id}" has a valid level`);
+  if (step.requirement.lootId) {
+    check(missionLoot.has(step.requirement.lootId), `mission step "${step.id}" references known loot`);
   }
 }
 

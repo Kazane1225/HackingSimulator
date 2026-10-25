@@ -6,6 +6,7 @@ import { Check, LabIcon, Reset, Shield } from "./icons";
 
 interface Props {
   progress: Progress;
+  remediatedCount: number;
   onReset: () => void;
 }
 
@@ -13,8 +14,8 @@ function solvedLevels(progress: Progress, labId: string): number[] {
   return progress[labId] ?? [];
 }
 
-export function Home({ progress, onReset }: Props) {
-  const anySolved = LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
+export function Home({ progress, remediatedCount, onReset }: Props) {
+  const anySolved = remediatedCount > 0 || LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
   const covered = OWASP_TOP10_2021.filter((c) => c.coverage === "covered").length;
   const adjacent = OWASP_TOP10_2021.filter((c) => c.coverage === "adjacent").length;
   const missing = OWASP_TOP10_2021.filter((c) => c.coverage === "none").length;
@@ -69,6 +70,21 @@ export function Home({ progress, onReset }: Props) {
         <p className="owasp-legend">
           15 個のラボで Top 10 を扱います。A04 は設計レビュー型ではなく、ファイルアップロードが隣接です。
         </p>
+      </section>
+
+      <section className="pane learning-paths" data-testid="learning-paths">
+        <div className="learning-path-card">
+          <span className="learning-path-kicker mono">DEFENSIVE</span>
+          <h2>修正演習</h2>
+          <p>各ラボで安全な修正案を選び、既知の攻撃を回帰テストします。</p>
+          <span className="pane-meta">{remediatedCount}/{LABS.length} 修了</span>
+        </div>
+        <a className="learning-path-card mission-card" href="#/mission">
+          <span className="learning-path-kicker mono">CHAINED CTF</span>
+          <h2>Harbor侵害調査</h2>
+          <p>6つの脆弱性を連鎖させ、初期侵入からログ偽装まで追跡します。</p>
+          <span className="btn btn-accent">ミッションを開く</span>
+        </a>
       </section>
 
       {LEARNING_TRACKS.map((track) => {
