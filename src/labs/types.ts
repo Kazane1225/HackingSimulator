@@ -140,7 +140,8 @@ export interface Lab {
   run(level: Level, input: LabInput): AttackResult;
   /**
    * A reference exploit for each beatable level (Lv1-4). Used by
-   * `npm run test:labs` to verify the level design; never shown in the UI.
+   * `npm run test:labs` to verify the level design, and replayed by the
+   * remediation exercise. Shown only for levels the learner has cleared.
    */
   exploits: Record<1 | 2 | 3 | 4, LabInput>;
 }
