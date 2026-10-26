@@ -319,7 +319,12 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
       </div>
 
       {learningMode === "remediation" ? (
-        <RemediationPanel lab={lab} completed={remediationCompleted} onComplete={() => markRemediated(id)} />
+        <RemediationPanel
+          lab={lab}
+          completed={remediationCompleted}
+          onComplete={() => markRemediated(id)}
+          isSolved={(lv) => isSolved(id, lv)}
+        />
       ) : <><div className="defense-bar">
         <span className="defense-tag mono">防御 Lv{level}</span>
         <span>{spec.defense}</span>

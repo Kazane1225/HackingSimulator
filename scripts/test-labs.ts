@@ -12,6 +12,7 @@ import { GLOSSARY } from "../src/glossary";
 import { LABS } from "../src/labs";
 import type { Level } from "../src/labs/types";
 import { HARBOR_MISSION } from "../src/missions";
+import { PATCH_LEVELS, patchOrder, reviewCode } from "../src/remediation";
 
 let failures = 0;
 const check = (cond: boolean, msg: string) => {
@@ -83,6 +84,22 @@ for (const lab of LABS) {
     check(!lab.run(5, exploits[lv]).solved, `Lv5 resists the Lv${lv} exploit`);
   }
 }
+
+console.log("\n[remediation]");
+for (const lab of LABS) {
+  const id = lab.meta.id;
+  const order = patchOrder(id);
+  check(
+    order.length === PATCH_LEVELS.length && PATCH_LEVELS.every((lv) => order.includes(lv)),
+    `${id} offers each of Lv2-5 as a patch exactly once`,
+  );
+  for (const lv of PATCH_LEVELS) {
+    const code = reviewCode(lab.levels[lv].code);
+    check(code.trim() !== "" && !/\/\/ /.test(code), `${id} Lv${lv} patch has no annotating comments`);
+  }
+}
+const secureSlots = new Set(LABS.map((lab) => patchOrder(lab.meta.id).indexOf(5)));
+check(secureSlots.size >= 3, `the secure patch is spread over ${secureSlots.size} slots across labs`);
 
 console.log("\n[mission]");
 const missionIds = HARBOR_MISSION.map((step) => step.id);
