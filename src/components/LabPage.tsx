@@ -1,7 +1,10 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { readDraft, readHints, writeDraft, writeHints } from "../drafts";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
-import { useLoot } from "../loot";
+import { readLoot, useLoot } from "../loot";
+import { earlierMissionLabIds, HARBOR_MISSION, prefillFromMission } from "../missions";
+import type { Progress } from "../progress";
 import {
   buildLabRequest,
   executeLabRequest,
@@ -11,13 +14,12 @@ import {
   type HttpResponse,
 } from "../realHttp";
 import { useRealLabs } from "../realServer";
+import { openTargetApp, targetChannel, type TargetState } from "../target/link";
 import { Check, LabIcon, Lock, LockOpen, Play, Reset, Shield } from "./icons";
-import { LabBrief } from "./LabBrief";
 import { LAB_UI } from "./labUI";
 import { RichText } from "./RichText";
 import { RemediationPanel } from "./RemediationPanel";
-import { XssPreview } from "./XssPreview";
-import { targetChannel, type TargetState } from "../target/link";
+import { TargetPane } from "./TargetPane";
 
 type InspectorTab = "hint" | "source" | "solution" | "explain";
 
@@ -31,10 +33,50 @@ const MOBILE_TABS: { key: MobileTab; label: string }[] = [
 
 interface Props {
   lab: Lab;
+  progress: Progress;
+  initialLevel?: Level;
+  fromMission?: boolean;
   isSolved: (labId: string, level: Level) => boolean;
   markSolved: (labId: string, level: Level) => void;
   remediationCompleted: boolean;
   markRemediated: (labId: string) => void;
+}
+
+interface Attempt {
+  runId: number;
+  at: number;
+  level: Level;
+  inputs: LabInput;
+  status: string;
+}
+
+const RECORDED_STATUS = new Set(["成功", "失敗", "防御済み", "進展あり", "通常応答"]);
+
+function attemptPreview(inputs: LabInput): string {
+  const text = Object.entries(inputs)
+    .filter(([, value]) => value !== "")
+    .map(([key, value]) => `${key}=${value.replace(/\s+/g, " ")}`)
+    .join(", ");
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+}
+
+function inputDiff(older: LabInput, newer: LabInput): { key: string; left: string; right: string }[] {
+  const keys = [...new Set([...Object.keys(older), ...Object.keys(newer)])].sort();
+  return keys
+    .filter((key) => (older[key] ?? "") !== (newer[key] ?? ""))
+    .map((key) => ({ key, left: older[key] ?? "", right: newer[key] ?? "" }));
+}
+
+function carryMessage(labId: string, level: Level, fromMission: boolean): string | null {
+  if (!fromMission || earlierMissionLabIds(labId).length === 0) return null;
+  if (readDraft(labId, level)) return "前回の入力を復元しました。";
+  if (labId === "auth") {
+    const password = readLoot().find((item) => item.labId === "sqli" && item.id === "sqli-pass-admin");
+    return password
+      ? "前の工程で得た admin のパスワードを、入力に入れました。"
+      : "前の工程のパスワードはまだありません。ユーザー名だけ admin にしてあります。";
+  }
+  return "前の工程の戦利品は、Proxy の「持ち込んだ情報」から挿入できます。";
 }
 
 function defaultInputs(lab: Lab): LabInput {
@@ -47,13 +89,27 @@ function assembledDuplicatesOutput(assembled: string | undefined, output: string
   return output.join("\n").includes(a);
 }
 
-export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markRemediated }: Props) {
+export function LabPage({
+  lab,
+  progress,
+  initialLevel,
+  fromMission = false,
+  isSolved,
+  markSolved,
+  remediationCompleted,
+  markRemediated,
+}: Props) {
   const id = lab.meta.id;
   const ui = LAB_UI[id];
   const firstUnsolved = LEVELS.find((lv) => lv < 5 && !isSolved(id, lv)) ?? 5;
+  const startLevel = initialLevel ?? firstUnsolved;
 
-  const [level, setLevel] = useState<Level>(firstUnsolved);
-  const [inputs, setInputs] = useState<LabInput>(() => defaultInputs(lab));
+  const [level, setLevel] = useState<Level>(startLevel);
+  const [inputs, setInputs] = useState<LabInput>(() => {
+    const draft = readDraft(id, startLevel);
+    if (draft) return draft.inputs;
+    return prefillFromMission(id, defaultInputs(lab), readLoot(), fromMission);
+  });
   const [result, setResult] = useState<AttackResult | null>(null);
   const [httpResponse, setHttpResponse] = useState<HttpResponse | null>(null);
   const [runId, setRunId] = useState(0);
@@ -61,13 +117,18 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
   const [intercept, setIntercept] = useState(true);
   const [held, setHeld] = useState(false);
   const [inspector, setInspector] = useState<InspectorTab>("hint");
-  const [hintsShown, setHintsShown] = useState<Partial<Record<Level, number>>>({});
+  const [hintsShown, setHintsShown] = useState<Partial<Record<Level, number>>>(() => readHints(id));
   const [mobileTab, setMobileTab] = useState<MobileTab>("target");
-  const [revealed, setRevealed] = useState<string[]>([]);
-  const [extraParams, setExtraParams] = useState<string[]>([]);
+  const [revealed, setRevealed] = useState<string[]>(() => readDraft(id, startLevel)?.revealed ?? []);
+  const [extraParams, setExtraParams] = useState<string[]>(() => readDraft(id, startLevel)?.extraParams ?? []);
   const [newParamName, setNewParamName] = useState("");
   const [focusField, setFocusField] = useState<string | null>(null);
   const [learningMode, setLearningMode] = useState<"attack" | "remediation">("attack");
+  const [history, setHistory] = useState<Attempt[]>([]);
+  const [compare, setCompare] = useState<number[]>([]);
+  const [harborConnected, setHarborConnected] = useState(false);
+  const [popoutNote, setPopoutNote] = useState<string | null>(null);
+  const [carryNote] = useState<string | null>(() => carryMessage(id, startLevel, fromMission));
   const { items: loot, ingest } = useLoot();
 
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
@@ -76,6 +137,15 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
   const viaReal = useRealLabs().includes(id);
   // Bumped whenever the pending result is no longer wanted (new request, level change, reset).
   const requestSeq = useRef(0);
+  const harborTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    writeDraft(id, level, { inputs, revealed, extraParams });
+  }, [id, level, inputs, revealed, extraParams]);
+
+  useEffect(() => {
+    writeHints(id, hintsShown);
+  }, [id, hintsShown]);
 
   const spec = lab.levels[level];
   const shownHints = Math.min(hintsShown[level] ?? 1, spec.hints.length);
@@ -99,11 +169,33 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
   };
 
   const selectLevel = (lv: Level) => {
+    const draft = readDraft(id, lv);
     setLevel(lv);
-    setRevealed([]);
-    setExtraParams([]);
+    setInputs(draft?.inputs ?? defaultInputs(lab));
+    setRevealed(draft?.revealed ?? []);
+    setExtraParams(draft?.extraParams ?? []);
     setNewParamName("");
     clear();
+  };
+
+  const restoreAttempt = (entry: Attempt) => {
+    setLevel(entry.level);
+    setInputs(entry.inputs);
+    setRevealed(
+      lab.fields
+        .filter((field) => field.hidden && (entry.inputs[field.name] ?? "") !== "" && (entry.inputs[field.name] ?? "") !== (field.default ?? ""))
+        .map((field) => field.name),
+    );
+    setExtraParams(Object.keys(entry.inputs).filter((name) => !lab.fields.some((field) => field.name === name)));
+    setNewParamName("");
+    clear();
+  };
+
+  const toggleCompare = (attemptId: number) => {
+    setCompare((prev) => {
+      if (prev.includes(attemptId)) return prev.filter((item) => item !== attemptId);
+      return [...prev, attemptId].slice(-2);
+    });
   };
 
   const knownVisible = lab.fields.filter(
@@ -133,10 +225,14 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
   };
 
   const applyResult = (r: AttackResult, requestInputs: LabInput) => {
+    const nextRun = runId + 1;
     setResult(r);
     setFired(null);
     setHeld(false);
-    setRunId((n) => n + 1);
+    setRunId(nextRun);
+    setHistory((prev) =>
+      [{ runId: nextRun, at: Date.now(), level, inputs: { ...requestInputs }, status: "" }, ...prev].slice(0, 20),
+    );
     ingest(id, r.loot);
     for (const key of Object.keys(requestInputs)) {
       const field = lab.fields.find((f) => f.name === key && f.hidden);
@@ -235,8 +331,12 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
     channel.onmessage = (ev: MessageEvent) => {
       const msg = ev.data as { type?: string; name?: string; value?: string; patch?: LabInput; id?: string; message?: string };
       if (!msg || typeof msg.type !== "string") return;
-      if (msg.type === "hello") {
-        channel.postMessage(snapshotRef.current);
+      if (msg.type === "hello" || msg.type === "ping") {
+        setHarborConnected(true);
+        setPopoutNote(null);
+        window.clearTimeout(harborTimer.current ?? undefined);
+        harborTimer.current = window.setTimeout(() => setHarborConnected(false), 5000);
+        if (msg.type === "hello") channel.postMessage(snapshotRef.current);
       } else if (msg.type === "field" && typeof msg.name === "string") {
         bridge.current.setField(msg.name, msg.value ?? "");
       } else if (msg.type === "submit") {
@@ -248,7 +348,10 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
       }
     };
     channel.postMessage(snapshotRef.current);
-    return () => channel.close();
+    return () => {
+      if (harborTimer.current !== null) window.clearTimeout(harborTimer.current);
+      channel.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -259,6 +362,34 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
   }, [id, level, inputs, result, runId, fired, browserTab, succeeded]);
 
   const labLoot = loot.filter((item) => item.labId === id);
+  const carriedLoot = fromMission
+    ? loot.filter((item) => earlierMissionLabIds(id).includes(item.labId))
+    : [];
+  const missionStep = HARBOR_MISSION.find((step) => step.requirement.labId === id && step.requirement.level === level);
+  const missionLootReady =
+    !!missionStep &&
+    (!missionStep.requirement.lootId ||
+      labLoot.some((item) => item.id === missionStep.requirement.lootId) ||
+      (result?.loot ?? []).some((item) => item.id === missionStep.requirement.lootId));
+  const compared = compare
+    .map((attemptId) => history.find((entry) => entry.runId === attemptId))
+    .filter((entry): entry is Attempt => entry !== undefined)
+    .sort((a, b) => a.at - b.at);
+  const diffs = compared.length === 2 ? inputDiff(compared[0].inputs, compared[1].inputs) : [];
+
+  const insertLoot = (value: string) => {
+    const target = focusField ?? visibleFields[0]?.name;
+    if (target) setField(target, value);
+    void navigator.clipboard?.writeText(value).catch(() => undefined);
+  };
+
+  const popOut = () => {
+    if (openTargetApp()) {
+      setPopoutNote(null);
+      return;
+    }
+    setPopoutNote("ポップアップがブロックされました。この画面のアプリから操作できます。");
+  };
 
   const status = held
     ? { cls: "held", label: "傍受中" }
@@ -273,6 +404,13 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
             : benign
               ? { cls: "benign", label: "通常応答" }
               : { cls: "ng", label: "失敗" };
+
+  useEffect(() => {
+    if (!result || !RECORDED_STATUS.has(status.label)) return;
+    setHistory((prev) =>
+      prev.map((entry) => (entry.runId === runId && entry.status !== status.label ? { ...entry, status: status.label } : entry)),
+    );
+  }, [result, runId, status.label]);
 
   const inspectorTabs: { key: InspectorTab; label: string; locked?: boolean }[] = [
     { key: "hint", label: "ヒント" },
@@ -346,14 +484,25 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
       </div>
 
       <div className={`workbench show-${mobileTab}`}>
-        <section className="wb-target" data-testid="pane-target">
-          <LabBrief labId={id} level={level} />
-          {result?.renderHtml !== undefined && (
-            <div className="xss-judge">
-              <XssPreview html={result.renderHtml} runId={runId} onFire={onFire} />
-            </div>
-          )}
-        </section>
+        <TargetPane
+          labId={id}
+          level={level}
+          progress={progress}
+          ui={ui}
+          inputs={inputs}
+          setField={setField}
+          submit={submitFromApp}
+          result={result}
+          succeeded={succeeded}
+          runId={runId}
+          onFire={onFire}
+          browserTab={browserTab}
+          setBrowserTab={setBrowserTab}
+          harborConnected={harborConnected}
+          popoutNote={popoutNote}
+          onPopout={popOut}
+          carryNote={carryNote}
+        />
 
         <section className="pane wb-proxy" data-testid="pane-proxy">
           <div className="pane-head">
@@ -419,6 +568,26 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
                   )}
                 </label>
               ))}
+              {carriedLoot.length > 0 && (
+                <div className="loot carried-loot" data-testid="carried-loot">
+                  <div className="loot-label mono">持ち込んだ情報</div>
+                  <p className="dim loot-hint">前の工程で見つけた値です。クリックでフォーカス中のパラメータへ挿入します。</p>
+                  <div className="loot-list">
+                    {carriedLoot.map((item) => (
+                      <button
+                        key={`${item.labId}-${item.id}`}
+                        type="button"
+                        className="loot-chip"
+                        title={item.value}
+                        onClick={() => insertLoot(item.value)}
+                      >
+                        <span className="loot-chip-lab">{item.label}</span>
+                        <span className="loot-chip-val mono">{item.value}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {canAddParams && (
                 <div className="param-add">
                   <div className="param-add-row">
@@ -480,7 +649,43 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
                   <div className={`notice ${status.cls}`}>
                     {fired !== null && <div>alert() が実行されました: {JSON.stringify(fired)}</div>}
                     {result.note && <div>{result.note}</div>}
-                    {succeeded && <div className="notice-strong">Lv{level} クリア — 「解答」タブが解放されました</div>}
+                    {succeeded && level < 5 && <div className="notice-strong">Lv{level} クリア — 「解答」タブが解放されました</div>}
+                    {succeeded && (
+                      <div className="next-actions">
+                        {level < 5 && (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              setInspector("solution");
+                              setMobileTab("inspector");
+                            }}
+                          >
+                            解答を読む
+                          </button>
+                        )}
+                        {level < 4 && (
+                          <button type="button" className="btn btn-accent" onClick={() => selectLevel((level + 1) as Level)}>
+                            次のレベルへ
+                          </button>
+                        )}
+                        {level === 4 && (
+                          <>
+                            <button type="button" className="btn" onClick={() => selectLevel(5)}>
+                              Lv5 を見る
+                            </button>
+                            <button type="button" className="btn btn-accent" onClick={() => setLearningMode("remediation")}>
+                              修正演習へ
+                            </button>
+                          </>
+                        )}
+                        {missionStep && missionLootReady && (
+                          <a className="btn" href="#/mission">
+                            ミッションで証拠を記録
+                          </a>
+                        )}
+                      </div>
+                    )}
                     {succeeded && result.recap && result.recap.length > 0 && (
                       <ol className="recap">
                         {result.recap.map((step) => (
@@ -517,11 +722,7 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
                           type="button"
                           className="loot-chip"
                           title={item.value}
-                          onClick={() => {
-                            const target = focusField ?? visibleFields[0]?.name;
-                            if (target) setField(target, item.value);
-                            void navigator.clipboard?.writeText(item.value).catch(() => undefined);
-                          }}
+                          onClick={() => insertLoot(item.value)}
                         >
                           <span className="loot-chip-lab">{item.label}</span>
                           <span className="loot-chip-val mono">{item.value}</span>
@@ -531,6 +732,45 @@ export function LabPage({ lab, isSolved, markSolved, remediationCompleted, markR
                   </div>
                 )}
               </>
+            )}
+            {history.length > 0 && (
+              <div className="history" data-testid="request-history">
+                <div className="history-head">
+                  <span className="pane-title">履歴</span>
+                  <span className="dim">2件選ぶと差分を表示します</span>
+                </div>
+                {history.map((entry) => {
+                  const preview = attemptPreview(entry.inputs);
+                  const when = new Date(entry.at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                  return (
+                    <div key={entry.runId} className="history-row">
+                      <input
+                        type="checkbox"
+                        checked={compare.includes(entry.runId)}
+                        aria-label={`${when} を比較`}
+                        onChange={() => toggleCompare(entry.runId)}
+                      />
+                      <button type="button" className="history-restore" onClick={() => restoreAttempt(entry)}>
+                        <span className="mono">{when}</span>
+                        <span>Lv{entry.level}</span>
+                        <span>{entry.status || "送信済み"}</span>
+                        <span className="history-preview mono">{preview}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+                {diffs.length > 0 && (
+                  <div className="history-diff" data-testid="request-diff">
+                    {diffs.map((row) => (
+                      <div key={row.key} className="history-diff-row">
+                        <span className="mono">{row.key}</span>
+                        <span className="mono history-diff-old">{row.left || "（空）"}</span>
+                        <span className="mono history-diff-new">{row.right || "（空）"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </section>

@@ -6,30 +6,49 @@ import { MissionPage } from "./components/MissionPage";
 import { Sidebar } from "./components/Sidebar";
 import { StoreWindow } from "./components/StoreWindow";
 import { Logo } from "./components/icons";
+import { clearDrafts, clearHints } from "./drafts";
 import { LABS, findLab } from "./labs";
+import type { Level } from "./labs/types";
 import { useLearningProgress } from "./learningProgress";
+import { useLoot } from "./loot";
 import { useProgress } from "./progress";
 
+interface Route {
+  path: string;
+  level?: Level;
+  fromMission: boolean;
+}
+
 /** Hash-based routing so deep links work on GitHub Pages without a 404 shim. */
-function useHashRoute(): string {
+function useHashRoute(): Route {
   const [hash, setHash] = useState(() => window.location.hash);
   useEffect(() => {
     const onChange = () => setHash(window.location.hash);
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return hash.replace(/^#/, "") || "/";
+  const raw = hash.replace(/^#/, "") || "/";
+  const queryAt = raw.indexOf("?");
+  const path = queryAt === -1 ? raw : raw.slice(0, queryAt);
+  const params = new URLSearchParams(queryAt === -1 ? "" : raw.slice(queryAt + 1));
+  const level = Number(params.get("lv"));
+  return {
+    path: path || "/",
+    level: level === 1 || level === 2 || level === 3 || level === 4 || level === 5 ? level : undefined,
+    fromMission: params.get("from") === "mission",
+  };
 }
 
 export function App() {
   const route = useHashRoute();
-  const { progress, markSolved, isSolved, reset } = useProgress();
-  const { learningProgress, markRemediated, completeMissionStep, resetLearning } = useLearningProgress();
+  const { progress, markSolved, isSolved, reset, replace } = useProgress();
+  const { learningProgress, markRemediated, completeMissionStep, resetLearning, replaceLearning } = useLearningProgress();
+  const { items: loot, reset: resetLoot, replace: replaceLoot } = useLoot();
 
-  const labMatch = route.match(/^\/lab\/([\w-]+)/);
+  const labMatch = route.path.match(/^\/lab\/([\w-]+)/);
   const lab = labMatch ? findLab(labMatch[1]) : undefined;
 
-  if (route === "/app") return <StoreWindow progress={progress} />;
+  if (route.path === "/app") return <StoreWindow progress={progress} />;
 
   const total = LABS.length * 4;
   const cleared = LABS.reduce(
@@ -52,9 +71,9 @@ export function App() {
               <span className="crumb-sep">/</span>
               <span>{lab.meta.shortTitle}</span>
             </>
-          ) : route === "/glossary" ? (
+          ) : route.path === "/glossary" ? (
             <span>用語集</span>
-          ) : route === "/mission" ? (
+          ) : route.path === "/mission" ? (
             <span>Harbor侵害調査</span>
           ) : (
             <span>ダッシュボード</span>
@@ -75,22 +94,25 @@ export function App() {
         <Sidebar
           activeId={lab?.meta.id}
           progress={progress}
-          glossaryActive={route === "/glossary"}
-          missionActive={route === "/mission"}
+          glossaryActive={route.path === "/glossary"}
+          missionActive={route.path === "/mission"}
         />
         <main className="main">
           {lab ? (
             <LabPage
               key={lab.meta.id}
               lab={lab}
+              progress={progress}
+              initialLevel={route.level}
+              fromMission={route.fromMission}
               isSolved={isSolved}
               markSolved={markSolved}
               remediationCompleted={learningProgress.remediatedLabIds.includes(lab.meta.id)}
               markRemediated={markRemediated}
             />
-          ) : route === "/glossary" ? (
+          ) : route.path === "/glossary" ? (
             <Glossary />
-          ) : route === "/mission" ? (
+          ) : route.path === "/mission" ? (
             <MissionPage
               progress={progress}
               learningProgress={learningProgress}
@@ -100,9 +122,31 @@ export function App() {
             <Home
               progress={progress}
               remediatedCount={learningProgress.remediatedLabIds.length}
+              lootCount={loot.length}
               onReset={() => {
                 reset();
                 resetLearning();
+                resetLoot();
+                clearDrafts();
+                clearHints();
+              }}
+              onExport={() => {
+                const payload = { progress, learning: learningProgress, loot };
+                const file = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(file);
+                link.download = "hacklab-progress.json";
+                link.click();
+                URL.revokeObjectURL(link.href);
+              }}
+              onImport={(data) => {
+                if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+                const row = data as Record<string, unknown>;
+                if (!("progress" in row) && !("learning" in row) && !("loot" in row)) return false;
+                if ("progress" in row) replace(row.progress);
+                if ("learning" in row) replaceLearning(row.learning);
+                if ("loot" in row) replaceLoot(row.loot);
+                return true;
               }}
             />
           )}

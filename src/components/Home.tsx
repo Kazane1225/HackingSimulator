@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { COVERAGE_LABEL, LEARNING_TRACKS, OWASP_TOP10_2021 } from "../curriculum";
 import { findLab, LABS } from "../labs";
 import { LEVELS } from "../labs/types";
@@ -7,15 +8,21 @@ import { Check, LabIcon, Reset, Shield } from "./icons";
 interface Props {
   progress: Progress;
   remediatedCount: number;
+  lootCount: number;
   onReset: () => void;
+  onExport: () => void;
+  onImport: (data: unknown) => boolean;
 }
 
 function solvedLevels(progress: Progress, labId: string): number[] {
   return progress[labId] ?? [];
 }
 
-export function Home({ progress, remediatedCount, onReset }: Props) {
-  const anySolved = remediatedCount > 0 || LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
+export function Home({ progress, remediatedCount, lootCount, onReset, onExport, onImport }: Props) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
+  const anySolved = lootCount > 0 || remediatedCount > 0 || LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
   const covered = OWASP_TOP10_2021.filter((c) => c.coverage === "covered").length;
   const adjacent = OWASP_TOP10_2021.filter((c) => c.coverage === "adjacent").length;
   const missing = OWASP_TOP10_2021.filter((c) => c.coverage === "none").length;
@@ -29,9 +36,56 @@ export function Home({ progress, remediatedCount, onReset }: Props) {
             Web の代表的な脆弱性を、攻撃者の視点で安全に体験する学習用シミュレータです。脆弱なサーバーはすべてブラウザ内で動作します。上から順に進めると、理解が積み上がります。
           </p>
         </div>
-        <button className="btn" onClick={onReset} disabled={!anySolved}>
-          <Reset width={14} height={14} /> 進捗をリセット
-        </button>
+        <div className="page-actions">
+          <button className="btn" type="button" onClick={onExport}>
+            進捗を書き出す
+          </button>
+          <button className="btn" type="button" onClick={() => fileRef.current?.click()}>
+            進捗を読み込む
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json"
+            hidden
+            aria-label="進捗ファイル"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              void file.text().then((text) => {
+                try {
+                  setImportNote(onImport(JSON.parse(text)) ? "進捗を読み込みました。" : "このファイルは進捗データではありません。");
+                } catch {
+                  setImportNote("JSON を読み取れませんでした。");
+                }
+              });
+            }}
+          />
+          {confirmingReset ? (
+            <div className="reset-confirm" data-testid="reset-confirm">
+              <p>攻撃の進捗、修正演習、ミッション、戦利品を消します。</p>
+              <button
+                className="btn btn-accent"
+                type="button"
+                onClick={() => {
+                  setConfirmingReset(false);
+                  onReset();
+                }}
+              >
+                リセットする
+              </button>
+              <button className="btn" type="button" onClick={() => setConfirmingReset(false)}>
+                キャンセル
+              </button>
+            </div>
+          ) : (
+            <button className="btn" type="button" onClick={() => setConfirmingReset(true)} disabled={!anySolved}>
+              <Reset width={14} height={14} /> 進捗をリセット
+            </button>
+          )}
+          {importNote && <p className="dim import-note">{importNote}</p>}
+        </div>
       </div>
 
       <section className="pane" data-testid="owasp-map">
@@ -155,7 +209,7 @@ export function Home({ progress, remediatedCount, onReset }: Props) {
           </div>
           <ol className="steps">
             <li>上の推奨順でラボを選ぶ。Lv1〜4 は種類の違う不完全な防御です。禁止リストを厚くするだけではありません。</li>
-            <li>「アプリを開く」で Harbor を別タブに出します。普段の操作はそちらで行い、owner や role などの改ざんは Proxy で行います。</li>
+            <li>ラボの画面で普段の操作をします。別タブの Harbor は「別タブで開く」から出せます。owner や role などの改ざんは Proxy で行います。</li>
             <li>「ソース」タブでサーバー側の処理を読み、防御の穴を探す。詰まったら「ヒント」を 1 段ずつ開く。</li>
             <li>
               クリア後に解答と解説を読み、なぜ通ったのか・どう防ぐのかを確認する。わからない用語は

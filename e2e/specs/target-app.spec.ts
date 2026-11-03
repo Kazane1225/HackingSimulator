@@ -12,8 +12,10 @@ test.describe("shared target app", () => {
 
     const brief = lab.pane("target");
     await expect(brief.getByRole("heading", { name: "開いた人の画面で動かす" })).toBeVisible();
+    await expect(brief.getByTestId("target-app")).toBeVisible();
+    await expect(brief.getByRole("heading", { name: "みんなのゲストブック" })).toBeVisible();
+    await brief.getByTestId("scenario-toggle").click();
     await expect(brief.getByRole("heading", { name: "状況" })).toBeVisible();
-    await expect(brief.getByTestId("target-app")).toHaveCount(0);
 
     const app = await lab.openApp();
     await app.getByRole("button", { name: "ホーム" }).click();

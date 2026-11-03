@@ -34,7 +34,7 @@ export class LabPage {
   async openApp(): Promise<Page> {
     const popupPromise = this.page.waitForEvent("popup");
     await this.openPane("target");
-    await this.pane("target").getByRole("button", { name: "アプリを開く" }).click();
+    await this.pane("target").getByRole("button", { name: "別タブで開く" }).click();
     const popup = await popupPromise;
     await popup.locator(".store-tool-card").waitFor();
     return popup;

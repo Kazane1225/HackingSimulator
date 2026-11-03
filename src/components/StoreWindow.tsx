@@ -54,7 +54,11 @@ export function StoreWindow({ progress }: Props) {
       }
     };
     channel.postMessage({ type: "hello" });
-    return () => channel.close();
+    const ping = window.setInterval(() => channel.postMessage({ type: "ping" }), 2000);
+    return () => {
+      window.clearInterval(ping);
+      channel.close();
+    };
   }, []);
 
   const post = (message: { type: string; name?: string; value?: string; patch?: LabInput; id?: string; message?: string }) => {

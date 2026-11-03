@@ -1,4 +1,5 @@
 import { HARBOR_MISSION } from "../missions";
+import { findLab } from "../labs";
 import type { LearningProgress } from "../learningProgress";
 import type { Progress } from "../progress";
 import { useLoot } from "../loot";
@@ -68,7 +69,7 @@ export function MissionPage({ progress, learningProgress, completeStep }: Props)
                     <>
                       <div className="mission-objective"><span className="mono">OBJECTIVE</span> {step.objective}</div>
                       <div className="mission-actions">
-                        <a className="btn" href={`#/lab/${step.requirement.labId}`}>
+                        <a className="btn" href={`#/lab/${step.requirement.labId}?lv=${step.requirement.level}&from=mission`}>
                           <Play width={13} height={13} /> 対象ラボを開く
                         </a>
                         <button
@@ -82,8 +83,8 @@ export function MissionPage({ progress, learningProgress, completeStep }: Props)
                       </div>
                       {!evidenceReady && (
                         <p className="dim mission-requirement">
-                          必要条件: {step.requirement.labId} Lv{step.requirement.level} クリア
-                          {step.requirement.lootId ? ` + ${step.requirement.lootId} を取得` : ""}
+                          必要条件: {findLab(step.requirement.labId)?.meta.shortTitle ?? step.requirement.labId} の Lv{step.requirement.level} をクリア
+                          {step.requirement.lootLabel ? ` + ${step.requirement.lootLabel} を取得` : ""}
                         </p>
                       )}
                       {done && (
