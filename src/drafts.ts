@@ -33,6 +33,14 @@ export function readDraft(labId: string, level: Level): LabDraft | null {
   }
 }
 
+export function removeDraft(labId: string, level: Level): void {
+  try {
+    sessionStorage.removeItem(draftKey(labId, level));
+  } catch {
+    // ignore
+  }
+}
+
 export function writeDraft(labId: string, level: Level, draft: LabDraft): void {
   try {
     sessionStorage.setItem(draftKey(labId, level), JSON.stringify(draft));

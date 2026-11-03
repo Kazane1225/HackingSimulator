@@ -67,9 +67,11 @@ export function TargetPane({
         >
           シナリオ
         </button>
-        <span className={`harbor-badge ${harborConnected ? "on" : ""}`} data-testid="harbor-link">
-          {harborConnected ? "Harbor 接続中" : "別タブは未接続"}
-        </span>
+        {harborConnected && (
+          <span className="harbor-badge on" data-testid="harbor-link">
+            Harbor 接続中
+          </span>
+        )}
         <button type="button" className="btn" onClick={onPopout}>
           別タブで開く
         </button>

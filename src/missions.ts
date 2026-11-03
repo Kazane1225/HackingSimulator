@@ -8,50 +8,10 @@ export interface MissionRequirement {
   lootLabel?: string;
 }
 
-/** A value copied into the next lab when it is opened from the mission. */
-export interface CarryField {
-  field: string;
-  literal?: string;
-  fromLab?: string;
-  lootId?: string;
-}
-
-/**
- * Credentials and secrets the previous step actually produces.
- * Other labs only offer the earlier loot as insertable chips.
- */
-export const MISSION_PREFILL: Record<string, CarryField[]> = {
-  auth: [
-    { field: "username", literal: "admin" },
-    { field: "password", fromLab: "sqli", lootId: "sqli-pass-admin" },
-  ],
-};
-
 export function earlierMissionLabIds(labId: string): string[] {
   const index = HARBOR_MISSION.findIndex((step) => step.requirement.labId === labId);
   if (index <= 0) return [];
   return HARBOR_MISSION.slice(0, index).map((step) => step.requirement.labId);
-}
-
-export function prefillFromMission(
-  labId: string,
-  base: Record<string, string>,
-  loot: { id: string; labId: string; value: string }[],
-  enabled: boolean,
-): Record<string, string> {
-  if (!enabled) return base;
-  const fields = MISSION_PREFILL[labId];
-  if (!fields) return base;
-  const next = { ...base };
-  for (const field of fields) {
-    if (field.literal !== undefined) {
-      next[field.field] = field.literal;
-      continue;
-    }
-    const item = loot.find((row) => row.labId === field.fromLab && row.id === field.lootId);
-    if (item) next[field.field] = item.value;
-  }
-  return next;
 }
 
 export interface MissionStep {

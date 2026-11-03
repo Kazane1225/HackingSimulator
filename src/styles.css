@@ -1289,12 +1289,6 @@ a.owasp-cell:hover {
   flex: 1;
   min-width: 0;
 }
-.target-launch {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 10px 0;
-}
-
 /* Written situation, shown above the embedded target app. */
 .brief {
   flex: none;
@@ -1305,35 +1299,6 @@ a.owasp-cell:hover {
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: auto;
-}
-.brief-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
-}
-.brief-top .btn {
-  height: 34px;
-  padding: 0 16px;
-  font-size: 13px;
-}
-.brief-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.brief-logo {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 8px;
-  background: #10243a;
-  color: #f3c16b;
 }
 .brief-kicker {
   margin: 0;
@@ -1447,13 +1412,6 @@ a.owasp-cell:hover {
   pointer-events: none;
 }
 @media (max-width: 720px) {
-  .brief-top {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .brief-top .btn {
-    justify-content: center;
-  }
   .brief-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto;

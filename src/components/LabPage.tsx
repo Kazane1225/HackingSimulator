@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { readDraft, readHints, writeDraft, writeHints } from "../drafts";
+import { readDraft, readHints, removeDraft, writeDraft, writeHints } from "../drafts";
 import type { AttackResult, Lab, LabField, LabInput, Level } from "../labs/types";
 import { LEVELS } from "../labs/types";
 import { readLoot, useLoot } from "../loot";
-import { earlierMissionLabIds, HARBOR_MISSION, prefillFromMission } from "../missions";
+import { earlierMissionLabIds, HARBOR_MISSION } from "../missions";
 import type { Progress } from "../progress";
 import {
   buildLabRequest,
@@ -36,6 +36,7 @@ interface Props {
   progress: Progress;
   initialLevel?: Level;
   fromMission?: boolean;
+  completedMissionStepIds: string[];
   isSolved: (labId: string, level: Level) => boolean;
   markSolved: (labId: string, level: Level) => void;
   remediationCompleted: boolean;
@@ -67,16 +68,21 @@ function inputDiff(older: LabInput, newer: LabInput): { key: string; left: strin
     .map((key) => ({ key, left: older[key] ?? "", right: newer[key] ?? "" }));
 }
 
-function carryMessage(labId: string, level: Level, fromMission: boolean): string | null {
-  if (!fromMission || earlierMissionLabIds(labId).length === 0) return null;
-  if (readDraft(labId, level)) return "前回の入力を復元しました。";
-  if (labId === "auth") {
-    const password = readLoot().find((item) => item.labId === "sqli" && item.id === "sqli-pass-admin");
-    return password
-      ? "前の工程で得た admin のパスワードを、入力に入れました。"
-      : "前の工程のパスワードはまだありません。ユーザー名だけ admin にしてあります。";
+function carryMessage(labId: string, fromMission: boolean): string | null {
+  const earlier = earlierMissionLabIds(labId);
+  if (!fromMission || earlier.length === 0) return null;
+  const found = readLoot().some((item) => earlier.includes(item.labId));
+  return found
+    ? "前の工程の戦利品を、Proxy の「持ち込んだ情報」に置いてあります。クリックでパラメータへ挿入できます。"
+    : "前の工程の戦利品はまだありません。ラボを進めてから、もう一度ここを開くと挿入できます。";
+}
+
+function sameInputs(left: LabInput, right: LabInput): boolean {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? "") !== (right[key] ?? "")) return false;
   }
-  return "前の工程の戦利品は、Proxy の「持ち込んだ情報」から挿入できます。";
+  return true;
 }
 
 function defaultInputs(lab: Lab): LabInput {
@@ -94,6 +100,7 @@ export function LabPage({
   progress,
   initialLevel,
   fromMission = false,
+  completedMissionStepIds,
   isSolved,
   markSolved,
   remediationCompleted,
@@ -105,11 +112,7 @@ export function LabPage({
   const startLevel = initialLevel ?? firstUnsolved;
 
   const [level, setLevel] = useState<Level>(startLevel);
-  const [inputs, setInputs] = useState<LabInput>(() => {
-    const draft = readDraft(id, startLevel);
-    if (draft) return draft.inputs;
-    return prefillFromMission(id, defaultInputs(lab), readLoot(), fromMission);
-  });
+  const [inputs, setInputs] = useState<LabInput>(() => readDraft(id, startLevel)?.inputs ?? defaultInputs(lab));
   const [result, setResult] = useState<AttackResult | null>(null);
   const [httpResponse, setHttpResponse] = useState<HttpResponse | null>(null);
   const [runId, setRunId] = useState(0);
@@ -128,7 +131,7 @@ export function LabPage({
   const [compare, setCompare] = useState<number[]>([]);
   const [harborConnected, setHarborConnected] = useState(false);
   const [popoutNote, setPopoutNote] = useState<string | null>(null);
-  const [carryNote] = useState<string | null>(() => carryMessage(id, startLevel, fromMission));
+  const [carryNote] = useState<string | null>(() => carryMessage(id, fromMission));
   const { items: loot, ingest } = useLoot();
 
   const browserTabs = ui.browserTabs ?? [{ id: "app", url: ui.url, title: ui.site }];
@@ -140,8 +143,10 @@ export function LabPage({
   const harborTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    writeDraft(id, level, { inputs, revealed, extraParams });
-  }, [id, level, inputs, revealed, extraParams]);
+    const untouched = revealed.length === 0 && extraParams.length === 0 && sameInputs(inputs, defaultInputs(lab));
+    if (untouched) removeDraft(id, level);
+    else writeDraft(id, level, { inputs, revealed, extraParams });
+  }, [id, lab, level, inputs, revealed, extraParams]);
 
   useEffect(() => {
     writeHints(id, hintsShown);
@@ -171,9 +176,14 @@ export function LabPage({
   const selectLevel = (lv: Level) => {
     const draft = readDraft(id, lv);
     setLevel(lv);
-    setInputs(draft?.inputs ?? defaultInputs(lab));
-    setRevealed(draft?.revealed ?? []);
-    setExtraParams(draft?.extraParams ?? []);
+    if (draft) {
+      setInputs(draft.inputs);
+      setRevealed(draft.revealed);
+      setExtraParams(draft.extraParams);
+    } else {
+      setRevealed([]);
+      setExtraParams([]);
+    }
     setNewParamName("");
     clear();
   };
@@ -365,7 +375,10 @@ export function LabPage({
   const carriedLoot = fromMission
     ? loot.filter((item) => earlierMissionLabIds(id).includes(item.labId))
     : [];
-  const missionStep = HARBOR_MISSION.find((step) => step.requirement.labId === id && step.requirement.level === level);
+  const missionIndex = HARBOR_MISSION.findIndex((step) => step.requirement.labId === id && step.requirement.level === level);
+  const missionStep = missionIndex >= 0 ? HARBOR_MISSION[missionIndex] : undefined;
+  const missionUnlocked = missionIndex === 0 || (missionIndex > 0 && completedMissionStepIds.includes(HARBOR_MISSION[missionIndex - 1].id));
+  const missionRecorded = !!missionStep && completedMissionStepIds.includes(missionStep.id);
   const missionLootReady =
     !!missionStep &&
     (!missionStep.requirement.lootId ||
@@ -679,7 +692,7 @@ export function LabPage({
                             </button>
                           </>
                         )}
-                        {missionStep && missionLootReady && (
+                        {missionStep && missionLootReady && missionUnlocked && !missionRecorded && (
                           <a className="btn" href="#/mission">
                             ミッションで証拠を記録
                           </a>

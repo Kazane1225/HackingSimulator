@@ -12,6 +12,7 @@ import type { Level } from "./labs/types";
 import { useLearningProgress } from "./learningProgress";
 import { useLoot } from "./loot";
 import { useProgress } from "./progress";
+import { isSaveFile } from "./saveFile";
 
 interface Route {
   path: string;
@@ -105,6 +106,7 @@ export function App() {
               progress={progress}
               initialLevel={route.level}
               fromMission={route.fromMission}
+              completedMissionStepIds={learningProgress.completedMissionStepIds}
               isSolved={isSolved}
               markSolved={markSolved}
               remediationCompleted={learningProgress.remediatedLabIds.includes(lab.meta.id)}
@@ -137,15 +139,13 @@ export function App() {
                 link.href = URL.createObjectURL(file);
                 link.download = "hacklab-progress.json";
                 link.click();
-                URL.revokeObjectURL(link.href);
+                window.setTimeout(() => URL.revokeObjectURL(link.href), 1500);
               }}
               onImport={(data) => {
-                if (!data || typeof data !== "object" || Array.isArray(data)) return false;
-                const row = data as Record<string, unknown>;
-                if (!("progress" in row) && !("learning" in row) && !("loot" in row)) return false;
-                if ("progress" in row) replace(row.progress);
-                if ("learning" in row) replaceLearning(row.learning);
-                if ("loot" in row) replaceLoot(row.loot);
+                if (!isSaveFile(data)) return false;
+                if ("progress" in data) replace(data.progress);
+                if ("learning" in data) replaceLearning(data.learning);
+                if ("loot" in data) replaceLoot(data.loot);
                 return true;
               }}
             />

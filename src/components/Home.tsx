@@ -3,6 +3,7 @@ import { COVERAGE_LABEL, LEARNING_TRACKS, OWASP_TOP10_2021 } from "../curriculum
 import { findLab, LABS } from "../labs";
 import { LEVELS } from "../labs/types";
 import type { Progress } from "../progress";
+import { isSaveFile } from "../saveFile";
 import { Check, LabIcon, Reset, Shield } from "./icons";
 
 interface Props {
@@ -21,6 +22,7 @@ function solvedLevels(progress: Progress, labId: string): number[] {
 export function Home({ progress, remediatedCount, lootCount, onReset, onExport, onImport }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [pendingImport, setPendingImport] = useState<unknown>(null);
   const [importNote, setImportNote] = useState<string | null>(null);
   const anySolved = lootCount > 0 || remediatedCount > 0 || LABS.some((lab) => solvedLevels(progress, lab.meta.id).length > 0);
   const covered = OWASP_TOP10_2021.filter((c) => c.coverage === "covered").length;
@@ -54,14 +56,45 @@ export function Home({ progress, remediatedCount, lootCount, onReset, onExport, 
               event.target.value = "";
               if (!file) return;
               void file.text().then((text) => {
+                let parsed: unknown;
                 try {
-                  setImportNote(onImport(JSON.parse(text)) ? "進捗を読み込みました。" : "このファイルは進捗データではありません。");
+                  parsed = JSON.parse(text);
                 } catch {
                   setImportNote("JSON を読み取れませんでした。");
+                  return;
                 }
+                if (!isSaveFile(parsed)) {
+                  setImportNote("このファイルは進捗データではありません。");
+                  return;
+                }
+                if (anySolved) {
+                  setPendingImport(parsed);
+                  setImportNote(null);
+                  return;
+                }
+                setImportNote(onImport(parsed) ? "進捗を読み込みました。" : "このファイルは進捗データではありません。");
               });
             }}
           />
+          {pendingImport !== null && (
+            <div className="reset-confirm" data-testid="import-confirm">
+              <p>いまの進捗を、ファイルの内容で置き換えます。</p>
+              <button
+                className="btn btn-accent"
+                type="button"
+                onClick={() => {
+                  const data = pendingImport;
+                  setPendingImport(null);
+                  setImportNote(onImport(data) ? "進捗を読み込みました。" : "このファイルは進捗データではありません。");
+                }}
+              >
+                置き換える
+              </button>
+              <button className="btn" type="button" onClick={() => setPendingImport(null)}>
+                キャンセル
+              </button>
+            </div>
+          )}
           {confirmingReset ? (
             <div className="reset-confirm" data-testid="reset-confirm">
               <p>攻撃の進捗、修正演習、ミッション、戦利品を消します。</p>

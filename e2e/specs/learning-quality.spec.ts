@@ -106,14 +106,17 @@ test.describe("Harbor chained mission", () => {
         JSON.stringify([{ id: "sqli-pass-admin", label: "admin のパスワード", value: "S3cr3t-Pa55!", labId: "sqli" }]),
       );
     });
+    await page.goto("/#/lab/auth?lv=4");
     await page.goto("/#/mission");
     await page.getByTestId("mission-step-mfa-bypass").getByRole("link", { name: /対象ラボを開く/ }).click();
     await expect(page).toHaveURL(/#\/lab\/auth\?lv=4&from=mission$/);
     await expect(lab.levelTab(4)).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByTestId("carry-note")).toContainText("admin のパスワード");
-    await expect(lab.proxyParam("username")).toHaveValue("admin");
+    await expect(page.getByTestId("carry-note")).toContainText("持ち込んだ情報");
+    await expect(lab.proxyParam("username")).toHaveValue("guest");
+    await expect(lab.proxyParam("password")).toHaveValue("guest");
+    await lab.proxyParam("password").click();
+    await page.getByTestId("carried-loot").getByRole("button", { name: /S3cr3t-Pa55!/ }).click();
     await expect(lab.proxyParam("password")).toHaveValue("S3cr3t-Pa55!");
-    await expect(page.getByTestId("carried-loot")).toContainText("S3cr3t-Pa55!");
   });
 });
 
@@ -122,9 +125,12 @@ test.describe("workbench continuity", () => {
     await lab.goto("sqli");
     await lab.setParam("username", "alice'--");
     await lab.selectLevel(2);
-    await expect(lab.proxyParam("username")).toHaveValue("admin");
+    await expect(lab.proxyParam("username")).toHaveValue("alice'--");
+    await lab.setParam("username", "bob");
     await lab.selectLevel(1);
     await expect(lab.proxyParam("username")).toHaveValue("alice'--");
+    await lab.selectLevel(2);
+    await expect(lab.proxyParam("username")).toHaveValue("bob");
   });
 
   test("restores an earlier request and shows what changed", async ({ lab }) => {
