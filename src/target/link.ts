@@ -20,14 +20,16 @@ export type TargetToApp = TargetState;
 
 export type AppToTarget =
   | { type: "hello" }
+  | { type: "ping" }
   | { type: "field"; name: string; value: string }
   | { type: "submit"; patch?: LabInput }
   | { type: "tab"; id: string }
   | { type: "fire"; message: string };
 
-export function openTargetApp(): void {
+/** Opens Harbor in another tab. Returns false when the browser blocks the popup. */
+export function openTargetApp(): boolean {
   const url = `${location.pathname}${location.search}#/app`;
-  window.open(url, TARGET_WINDOW);
+  return window.open(url, TARGET_WINDOW) !== null;
 }
 
 export function targetChannel(): BroadcastChannel | null {

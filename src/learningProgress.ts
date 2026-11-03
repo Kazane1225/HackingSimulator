@@ -73,7 +73,11 @@ export function useLearningProgress() {
   }, []);
 
   const resetLearning = useCallback(() => setLearningProgress({ ...EMPTY }), []);
+  const replaceLearning = useCallback(
+    (value: unknown) => setLearningProgress(sanitizeLearningProgress(value)),
+    [],
+  );
 
-  return { learningProgress, markRemediated, completeMissionStep, resetLearning };
+  return { learningProgress, markRemediated, completeMissionStep, resetLearning, replaceLearning };
 }
 

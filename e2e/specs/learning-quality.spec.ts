@@ -92,6 +92,73 @@ test.describe("Harbor chained mission", () => {
     await first.getByRole("button", { name: /証拠を記録/ }).click();
     await expect(second).toContainText("調査中");
     await expect(second).toContainText("認証・セッション管理 Lv4");
+    await expect(second).toContainText("認証 / Session の Lv4");
+    await expect(second).toContainText("MFA コード");
+    await expect(second).not.toContainText("auth-mfa");
+  });
+
+  test("opens the required level and carries the stolen password", async ({ page, lab }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("hacklab.progress.v1", JSON.stringify({ sqli: [4] }));
+      localStorage.setItem("hacklab.learning.v1", JSON.stringify({ remediatedLabIds: [], completedMissionStepIds: ["initial-access"] }));
+      localStorage.setItem(
+        "hacklab.loot.v2",
+        JSON.stringify([{ id: "sqli-pass-admin", label: "admin のパスワード", value: "S3cr3t-Pa55!", labId: "sqli" }]),
+      );
+    });
+    await page.goto("/#/lab/auth?lv=4");
+    await page.goto("/#/mission");
+    await page.getByTestId("mission-step-mfa-bypass").getByRole("link", { name: /対象ラボを開く/ }).click();
+    await expect(page).toHaveURL(/#\/lab\/auth\?lv=4&from=mission$/);
+    await expect(lab.levelTab(4)).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("carry-note")).toContainText("持ち込んだ情報");
+    await expect(lab.proxyParam("username")).toHaveValue("guest");
+    await expect(lab.proxyParam("password")).toHaveValue("guest");
+    await lab.proxyParam("password").click();
+    await page.getByTestId("carried-loot").getByRole("button", { name: /S3cr3t-Pa55!/ }).click();
+    await expect(lab.proxyParam("password")).toHaveValue("S3cr3t-Pa55!");
+  });
+});
+
+test.describe("workbench continuity", () => {
+  test("keeps the proxy draft when the level changes", async ({ lab }) => {
+    await lab.goto("sqli");
+    await lab.setParam("username", "alice'--");
+    await lab.selectLevel(2);
+    await expect(lab.proxyParam("username")).toHaveValue("alice'--");
+    await lab.setParam("username", "bob");
+    await lab.selectLevel(1);
+    await expect(lab.proxyParam("username")).toHaveValue("alice'--");
+    await lab.selectLevel(2);
+    await expect(lab.proxyParam("username")).toHaveValue("bob");
+  });
+
+  test("restores an earlier request and shows what changed", async ({ lab }) => {
+    await lab.goto("sqli");
+    await lab.send("username", "one");
+    await lab.send("username", "two");
+    const history = lab.pane("proxy").getByTestId("request-history");
+    await expect(history.getByRole("button")).toHaveCount(2);
+    await history.getByRole("checkbox").nth(0).check();
+    await history.getByRole("checkbox").nth(1).check();
+    await expect(lab.pane("proxy").getByTestId("request-diff")).toContainText("username");
+    await history.getByRole("button", { name: /username=one/ }).click();
+    await expect(lab.proxyParam("username")).toHaveValue("one");
+  });
+
+  test("reset clears loot as well as progress", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("hacklab.progress.v1", JSON.stringify({ sqli: [1] }));
+      localStorage.setItem(
+        "hacklab.loot.v2",
+        JSON.stringify([{ id: "auth-mfa", label: "MFA コード", value: "482016", labId: "auth" }]),
+      );
+    });
+    await page.goto("/#/");
+    await page.getByRole("button", { name: "進捗をリセット" }).click();
+    await page.getByRole("button", { name: "リセットする" }).click();
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("hacklab.progress.v1"))).toBe("{}");
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem("hacklab.loot.v2"))).toBe("[]");
   });
 });
 

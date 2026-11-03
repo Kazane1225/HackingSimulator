@@ -25,7 +25,7 @@ function sanitize(value: unknown): StoredLoot[] {
   return out;
 }
 
-function load(): StoredLoot[] {
+export function readLoot(): StoredLoot[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? sanitize(JSON.parse(raw)) : [];
@@ -34,16 +34,39 @@ function load(): StoredLoot[] {
   }
 }
 
+const LOOT_EVENT = "hacklab-loot";
+
 export function useLoot() {
-  const [items, setItems] = useState<StoredLoot[]>(load);
+  const [items, setItems] = useState<StoredLoot[]>(readLoot);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      const raw = JSON.stringify(items);
+      if (localStorage.getItem(STORAGE_KEY) !== raw) {
+        localStorage.setItem(STORAGE_KEY, raw);
+        window.dispatchEvent(new Event(LOOT_EVENT));
+      }
     } catch {
       // private mode
     }
   }, [items]);
+
+  useEffect(() => {
+    const sync = () => {
+      const next = readLoot();
+      setItems((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY) return;
+      sync();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(LOOT_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(LOOT_EVENT, sync);
+    };
+  }, []);
 
   const ingest = useCallback((labId: string, found: LootItem[] | undefined) => {
     if (!found?.length) return;
@@ -59,5 +82,8 @@ export function useLoot() {
     });
   }, []);
 
-  return { items, ingest };
+  const reset = useCallback(() => setItems([]), []);
+  const replace = useCallback((value: unknown) => setItems(sanitize(value)), []);
+
+  return { items, ingest, reset, replace };
 }

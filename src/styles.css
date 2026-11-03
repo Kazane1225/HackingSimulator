@@ -747,6 +747,112 @@ a.owasp-cell:hover {
   display: flex;
   flex-direction: column;
 }
+.target-pane-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.target-pane-heading {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.target-pane-heading h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.harbor-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.harbor-badge.on {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.popout-note,
+.carry-note {
+  margin: 0 0 8px;
+  color: var(--dim);
+  font-size: 13px;
+}
+.target-embed {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.target-embed .browser { width: 100%; }
+.target-embed .browser-viewport { min-height: 280px; }
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.reset-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.reset-confirm p,
+.import-note { margin: 0; }
+.next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.history { border-top: 1px solid var(--line); }
+.history-head,
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.history-restore {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.history-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+}
+.history-diff {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px 12px;
+}
+.history-diff-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 6rem) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  font-size: 12px;
+}
+.history-diff-old { color: var(--ng); overflow-wrap: anywhere; }
+.history-diff-new { color: var(--ok); overflow-wrap: anywhere; }
+.carried-loot { padding: 0 12px 8px; }
 .wb-proxy {
   grid-area: proxy;
   display: flex;
@@ -1043,6 +1149,7 @@ a.owasp-cell:hover {
   display: flex;
   gap: 2px;
   min-width: 0;
+  overflow-x: auto;
 }
 .tab {
   padding: 5px 14px;
@@ -1182,15 +1289,9 @@ a.owasp-cell:hover {
   flex: 1;
   min-width: 0;
 }
-.target-launch {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 10px 0;
-}
-
-/* The lab pane is the situation. Harbor itself opens from the button. */
+/* Written situation, shown above the embedded target app. */
 .brief {
-  flex: 1;
+  flex: none;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1198,35 +1299,6 @@ a.owasp-cell:hover {
   border: 1px solid var(--line);
   border-radius: 6px;
   overflow: auto;
-}
-.brief-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
-}
-.brief-top .btn {
-  height: 34px;
-  padding: 0 16px;
-  font-size: 13px;
-}
-.brief-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.brief-logo {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 8px;
-  background: #10243a;
-  color: #f3c16b;
 }
 .brief-kicker {
   margin: 0;
@@ -1239,8 +1311,13 @@ a.owasp-cell:hover {
   font-size: 18px;
   letter-spacing: -0.02em;
 }
+.brief.embedded {
+  max-height: 320px;
+  margin-bottom: 8px;
+  overflow: auto;
+}
 .brief-grid {
-  flex: 1;
+  flex: none;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
   grid-template-rows: auto minmax(0, 1fr);
@@ -1335,13 +1412,6 @@ a.owasp-cell:hover {
   pointer-events: none;
 }
 @media (max-width: 720px) {
-  .brief-top {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .brief-top .btn {
-    justify-content: center;
-  }
   .brief-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto;

@@ -4,6 +4,14 @@ export interface MissionRequirement {
   labId: string;
   level: Level;
   lootId?: string;
+  /** Learner-facing name for {@link lootId}. */
+  lootLabel?: string;
+}
+
+export function earlierMissionLabIds(labId: string): string[] {
+  const index = HARBOR_MISSION.findIndex((step) => step.requirement.labId === labId);
+  if (index <= 0) return [];
+  return HARBOR_MISSION.slice(0, index).map((step) => step.requirement.labId);
 }
 
 export interface MissionStep {
@@ -32,7 +40,7 @@ export const HARBOR_MISSION: MissionStep[] = [
     title: "管理者セッションの奪取",
     briefing: "認証情報だけではMFAで止まります。デバッグ用メール配信の痕跡を調べます。",
     objective: "認証・セッション管理 Lv4でMFAコードを発見し、adminセッションを得る",
-    requirement: { labId: "auth", level: 4, lootId: "auth-mfa" },
+    requirement: { labId: "auth", level: 4, lootId: "auth-mfa", lootLabel: "MFA コード" },
     artifact: { label: "adminセッション", description: "管理APIが発行するトークンの検証方式を調査できます。" },
   },
   {
@@ -41,7 +49,7 @@ export const HARBOR_MISSION: MissionStep[] = [
     title: "サービス間トークンの偽造",
     briefing: "管理APIはJWTヘッダー内の鍵取得先を信頼しています。",
     objective: "JWT Lv4で攻撃者管理のJWKSを使い、adminトークンを偽造する",
-    requirement: { labId: "jwt", level: 4, lootId: "jwt-oct" },
+    requirement: { labId: "jwt", level: 4, lootId: "jwt-oct", lootLabel: "JWKS の鍵" },
     artifact: { label: "内部API用admin JWT", description: "内部のURL取得機能を管理者権限で操作できます。" },
   },
   {
@@ -50,7 +58,7 @@ export const HARBOR_MISSION: MissionStep[] = [
     title: "内部メタデータへの到達",
     briefing: "画像取得サービスはリダイレクト後の接続先を再検証していません。",
     objective: "SSRF Lv4で内部メタデータのaccess-keyを取得する",
-    requirement: { labId: "ssrf", level: 4, lootId: "ssrf-access-key" },
+    requirement: { labId: "ssrf", level: 4, lootId: "ssrf-access-key", lootLabel: "メタデータ access-key" },
     artifact: { label: "クラウドaccess-key", description: "本番環境に残された管理用ファイルを読む足掛かりです。" },
   },
   {
@@ -59,7 +67,7 @@ export const HARBOR_MISSION: MissionStep[] = [
     title: "本番設定からの秘密取得",
     briefing: "本番Webルートに開発用ファイルと管理エンドポイントが残っています。",
     objective: "設定ミス Lv4で公開された秘密を回収する",
-    requirement: { labId: "misconf", level: 4, lootId: "misconf-flag" },
+    requirement: { labId: "misconf", level: 4, lootId: "misconf-flag", lootLabel: "公開された秘密" },
     artifact: { label: "本番環境の秘密", description: "侵害は成立しました。最後に監査記録の信頼性を確認します。" },
   },
   {
@@ -68,7 +76,7 @@ export const HARBOR_MISSION: MissionStep[] = [
     title: "監査記録の偽装",
     briefing: "攻撃者は最後に監査ログの構造を壊し、操作主体をadminに見せかけようとします。",
     objective: "ログの穴 Lv4で監視が誤認する記録を作る",
-    requirement: { labId: "logging", level: 4, lootId: "logging-flag" },
+    requirement: { labId: "logging", level: 4, lootId: "logging-flag", lootLabel: "偽装した記録" },
     artifact: { label: "侵害経路レポート", description: "入口から痕跡偽装までの攻撃チェーンを再構成しました。" },
   },
 ];

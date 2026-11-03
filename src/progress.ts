@@ -73,6 +73,7 @@ export function useProgress() {
   );
 
   const reset = useCallback(() => setProgress({}), []);
+  const replace = useCallback((value: unknown) => setProgress(sanitize(value)), []);
 
-  return { progress, markSolved, isSolved, reset };
+  return { progress, markSolved, isSolved, reset, replace };
 }
